@@ -963,7 +963,7 @@ mod server {
                 }
             });
 
-            info!("Server listening for clients on {}", public_addr);
+            info!("Server listening for clients on {}", "0.0.0.0:10600");
             let request_count = atomic::AtomicUsize::new(0);
 
             let server = rouille::Server::new("0.0.0.0:10600", move |request| {
