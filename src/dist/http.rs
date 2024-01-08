@@ -235,6 +235,7 @@ mod server {
     use std::convert::Infallible;
     use std::net::SocketAddr;
     use std::result::Result as StdResult;
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -1535,13 +1536,13 @@ mod server {
                         }
                     }
                 }
-            });
+            }); 
 
             warp::serve(api)
                 .tls()
                 .cert(cert_pem)
                 .key(privkey_pem)
-                .run(public_addr)
+                .run(SocketAddr::from_str("0.0.0.0:10600").unwrap())
                 .await;
 
             panic!("Warp server terminated")
