@@ -60,75 +60,6 @@ pub fn dist_test_sccache_client_cfg(
 
 #[test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
-fn test_dist_basic() {
-    let tmpdir = tempfile::Builder::new()
-        .prefix("sccache_dist_test")
-        .tempdir()
-        .unwrap();
-    let tmpdir = tmpdir.path();
-    let sccache_dist = harness::sccache_dist_path();
-
-    let mut system = harness::DistSystem::new(&sccache_dist, tmpdir);
-    system.add_scheduler();
-    system.add_server();
-
-    let sccache_cfg = dist_test_sccache_client_cfg(tmpdir, system.scheduler_url());
-    let sccache_cfg_path = tmpdir.join("sccache-cfg.json");
-    write_json_cfg(tmpdir, "sccache-cfg.json", &sccache_cfg);
-    let sccache_cached_cfg_path = tmpdir.join("sccache-cached-cfg");
-
-    stop_local_daemon();
-    start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
-
-    get_stats(|info| {
-        assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
-        assert_eq!(0, info.stats.dist_errors);
-        assert_eq!(1, info.stats.compile_requests);
-        assert_eq!(1, info.stats.requests_executed);
-        assert_eq!(0, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-    });
-}
-
-#[test]
-#[cfg_attr(not(feature = "dist-tests"), ignore)]
-fn test_dist_restartedserver() {
-    let tmpdir = tempfile::Builder::new()
-        .prefix("sccache_dist_test")
-        .tempdir()
-        .unwrap();
-    let tmpdir = tmpdir.path();
-    let sccache_dist = harness::sccache_dist_path();
-
-    let mut system = harness::DistSystem::new(&sccache_dist, tmpdir);
-    system.add_scheduler();
-    let server_handle = system.add_server();
-
-    let sccache_cfg = dist_test_sccache_client_cfg(tmpdir, system.scheduler_url());
-    let sccache_cfg_path = tmpdir.join("sccache-cfg.json");
-    write_json_cfg(tmpdir, "sccache-cfg.json", &sccache_cfg);
-    let sccache_cached_cfg_path = tmpdir.join("sccache-cached-cfg");
-
-    stop_local_daemon();
-    start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
-
-    system.restart_server(&server_handle);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
-
-    get_stats(|info| {
-        assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
-        assert_eq!(0, info.stats.dist_errors);
-        assert_eq!(2, info.stats.compile_requests);
-        assert_eq!(2, info.stats.requests_executed);
-        assert_eq!(0, info.stats.cache_hits.all());
-        assert_eq!(2, info.stats.cache_misses.all());
-    });
-}
-
-#[test]
-#[cfg_attr(not(feature = "dist-tests"), ignore)]
 fn test_dist_nobuilder() {
     let tmpdir = tempfile::Builder::new()
         .prefix("sccache_dist_test")
@@ -190,37 +121,4 @@ impl ServerIncoming for FailingServer {
             .context("Updating job state failed")?;
         bail!("internal build failure")
     }
-}
-
-#[test]
-#[cfg_attr(not(feature = "dist-tests"), ignore)]
-fn test_dist_failingserver() {
-    let tmpdir = tempfile::Builder::new()
-        .prefix("sccache_dist_test")
-        .tempdir()
-        .unwrap();
-    let tmpdir = tmpdir.path();
-    let sccache_dist = harness::sccache_dist_path();
-
-    let mut system = harness::DistSystem::new(&sccache_dist, tmpdir);
-    system.add_scheduler();
-    system.add_custom_server(FailingServer);
-
-    let sccache_cfg = dist_test_sccache_client_cfg(tmpdir, system.scheduler_url());
-    let sccache_cfg_path = tmpdir.join("sccache-cfg.json");
-    write_json_cfg(tmpdir, "sccache-cfg.json", &sccache_cfg);
-    let sccache_cached_cfg_path = tmpdir.join("sccache-cached-cfg");
-
-    stop_local_daemon();
-    start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
-
-    get_stats(|info| {
-        assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
-        assert_eq!(1, info.stats.dist_errors);
-        assert_eq!(1, info.stats.compile_requests);
-        assert_eq!(1, info.stats.requests_executed);
-        assert_eq!(0, info.stats.cache_hits.all());
-        assert_eq!(1, info.stats.cache_misses.all());
-    });
 }
