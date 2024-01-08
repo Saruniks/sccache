@@ -1,4 +1,4 @@
-name: sccache
+name: my-custom-sccache
 base: core22
 adopt-info: sccache
 
