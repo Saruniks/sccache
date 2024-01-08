@@ -1443,7 +1443,7 @@ mod server {
         // HTTPS pieces all the builders will use for connection encryption
         cert_digest: Vec<u8>,
         cert_pem: Vec<u8>,
-        _privkey_pem: Vec<u8>,
+        privkey_pem: Vec<u8>,
         // Key used to sign any requests relating to jobs
         jwt_key: Vec<u8>,
         // Randomly generated nonce to allow the scheduler to detect server restarts
@@ -1471,7 +1471,7 @@ mod server {
                 scheduler_auth,
                 cert_digest,
                 cert_pem,
-                _privkey_pem: privkey_pem,
+                privkey_pem,
                 jwt_key,
                 server_nonce,
                 handler,
@@ -1484,6 +1484,7 @@ mod server {
                 scheduler_auth,
                 cert_digest,
                 cert_pem,
+                privkey_pem,
                 jwt_key,
                 server_nonce,
                 handler,
@@ -1543,8 +1544,6 @@ mod server {
                 .key(privkey_pem)
                 .run(SocketAddr::from_str("0.0.0.0:10600").unwrap())
                 .await;
-
-            panic!("Warp server terminated")
         }
     }
 
