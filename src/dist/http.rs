@@ -1437,13 +1437,13 @@ mod server {
     }
 
     pub struct Server<S> {
-        public_addr: SocketAddr,
+        _public_addr: SocketAddr,
         scheduler_url: reqwest::Url,
         scheduler_auth: String,
         // HTTPS pieces all the builders will use for connection encryption
         cert_digest: Vec<u8>,
         cert_pem: Vec<u8>,
-        privkey_pem: Vec<u8>,
+        _privkey_pem: Vec<u8>,
         // Key used to sign any requests relating to jobs
         jwt_key: Vec<u8>,
         // Randomly generated nonce to allow the scheduler to detect server restarts
@@ -1466,12 +1466,12 @@ mod server {
             let server_nonce = ServerNonce::new();
 
             Ok(Self {
-                public_addr,
+                _public_addr: public_addr,
                 scheduler_url,
                 scheduler_auth,
                 cert_digest,
                 cert_pem,
-                privkey_pem,
+                _privkey_pem: privkey_pem,
                 jwt_key,
                 server_nonce,
                 handler,
@@ -1480,15 +1480,14 @@ mod server {
 
         pub async fn start(self) -> Result<Infallible> {
             let Self {
-                public_addr,
                 scheduler_url,
                 scheduler_auth,
                 cert_digest,
                 cert_pem,
-                privkey_pem,
                 jwt_key,
                 server_nonce,
                 handler,
+                ..
             } = self;
 
             let handler = Arc::new(handler);
