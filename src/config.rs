@@ -1078,6 +1078,7 @@ pub mod scheduler {
     use crate::errors::*;
 
     use serde::{Deserialize, Serialize};
+    // use structopt::StructOpt;
 
     #[derive(Debug, Serialize, Deserialize)]
     #[serde(tag = "type")]
