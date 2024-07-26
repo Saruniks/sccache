@@ -37,11 +37,9 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
 
     write_source(tmpdir, source_file, "#if !defined(SCCACHE_TEST_DEFINE)\n#error SCCACHE_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
     // Create the command once and reuse it
-    let mut base_command: Command = 
-    // sccache_command();
+    let mut base_command: Command = sccache_command();
 
-    Command::new("/home/ubuntu-user/sccache/target/debug/sccache");
-
+    // Command::new("/home/ubuntu-user/sccache/target/debug/sccache");
 
     println!("FIRST_COMMAND = {:#?}", base_command);
 
