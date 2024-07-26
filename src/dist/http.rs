@@ -67,7 +67,7 @@ mod common {
         }
     }
 
-    #[cfg(feature = "dist-client")]
+    #[cfg(any(feature = "dist-server", feature = "dist-client"))]
     pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::RequestBuilder,
     ) -> Result<T> {

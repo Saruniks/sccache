@@ -212,6 +212,7 @@ dist-server = [
   "version-compare",
   "warp",
   "thiserror",
+  "sha2",            # is this necessary?
 ]
 # Enables dist tests with external requirements
 dist-tests = ["dist-client", "dist-server"]
