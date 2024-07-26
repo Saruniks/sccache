@@ -48,7 +48,7 @@ gzp = { version = "0.11.3", default-features = false, features = [
 ] }
 http = "1.0"
 http-body-util = { version = "0.1", optional = true }
-hyper = { version = "1.1", optional = true, features = ["server", "http1"] }
+hyper = { version = "1.1", optional = true, features = ["server", "http1"] } # Can we use warp::hyper instead??
 hyper-util = { version = "0.1.3", optional = true, features = [
   "tokio",
   "server",
@@ -71,15 +71,20 @@ regex = "1.10.3"
 reqsign = { version = "0.16.0", optional = true }
 reqwest = { version = "0.12", features = [
   "json",
-  "blocking",
+  "native-tls",
   "stream",
   "rustls-tls",
   "rustls-tls-native-roots",
   "trust-dns",
 ], optional = true }
 retry = "2"
+rsa = "0.4" # remove, replace with openssl??
+picky = "6.2" # remove, replace with openssl??
+structopt = "0.3.25" # only sccache-dist???
 semver = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+#redis = { version = "0.21", optional = true, default-features = false, features = ["aio", "tokio-comp"] }
+percent-encoding = { version = "2", optional = true }
+serde = "1.0"
 serde_json = "1.0"
 sha2 = { version = "0.10.8", optional = true }
 strip-ansi-escapes = "0.2"
@@ -115,11 +120,12 @@ nix = { version = "0.28.0", optional = true, features = [
   "process",
 ] }
 object = "0.32"
-rouille = { version = "3.6", optional = true, default-features = false, features = [
-  "ssl",
-] }
 syslog = { version = "6", optional = true }
 version-compare = { version = "0.1.1", optional = true }
+native-tls = "0.2.8"
+void = { version = "1", optional = true }
+warp = { version = "0.3.2", optional = true, features = ["tls"] } #bump deps after successful compile
+thiserror = { version = "1.0.30", optional = true } # is this used somewhere?? Doesn't seem so
 
 [dev-dependencies]
 assert_cmd = "2.0.13"
@@ -196,9 +202,10 @@ dist-server = [
   "nix",
   "openssl",
   "reqwest",
-  "rouille",
   "syslog",
   "version-compare",
+  "warp",
+  "thiserror"
 ]
 # Enables dist tests with external requirements
 dist-tests = ["dist-client", "dist-server"]

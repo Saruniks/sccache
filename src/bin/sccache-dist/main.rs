@@ -2,7 +2,9 @@
 extern crate log;
 
 use anyhow::{bail, Context, Error, Result};
+use async_trait::async_trait;
 use base64::Engine;
+use cmdline::{AuthSubcommand, Command};
 use rand::{rngs::OsRng, RngCore};
 use sccache::config::{
     scheduler as scheduler_config, server as server_config, INSECURE_DIST_CLIENT_TOKEN,
@@ -22,7 +24,7 @@ use std::env;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 #[cfg_attr(target_os = "freebsd", path = "build_freebsd.rs")]
@@ -31,17 +33,81 @@ mod build;
 mod cmdline;
 mod token_check;
 
-use cmdline::{AuthSubcommand, Command};
-
 pub const INSECURE_DIST_SERVER_TOKEN: &str = "dangerously_insecure_server";
+
+// #[derive(StructOpt)]
+// enum Command {
+//     Auth(AuthSubcommand),
+//     Scheduler(SchedulerSubcommand),
+//     Server(ServerSubcommand),
+// }
+
+// #[derive(StructOpt)]
+// #[structopt(rename_all = "kebab-case")]
+// struct SchedulerSubcommand {
+//     /// Use the server config file at PATH
+//     #[structopt(long, value_name = "PATH")]
+//     config: PathBuf,
+
+//     /// Log to the syslog with LEVEL
+//     #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+//     syslog: Option<String>,
+// }
+
+// #[derive(StructOpt)]
+// #[structopt(rename_all = "kebab-case")]
+// struct ServerSubcommand {
+//     /// Use the server config file at PATH
+//     #[structopt(long, value_name = "PATH")]
+//     config: PathBuf,
+
+//     /// Log to the syslog with LEVEL
+//     #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
+//     syslog: Option<String>,
+// }
+
+// #[derive(StructOpt)]
+// #[structopt(rename_all = "kebab-case")]
+// struct GenerateSharedToken {
+//     /// Use the specified number of bits for randomness
+//     #[structopt(long, default_value = "256")]
+//     bits: usize,
+// }
+
+// #[derive(StructOpt)]
+// #[structopt(rename_all = "kebab-case")]
+// struct GenerateJwtHS256ServerToken {
+//     /// Use the key from the scheduler config file
+//     #[structopt(long, value_name = "PATH")]
+//     config: Option<PathBuf>,
+
+//     /// Use specified key to create the token
+//     #[structopt(long, value_name = "KEY", required_unless = "config")]
+//     secret_key: Option<String>,
+
+//     /// Generate a key for the specified server
+//     #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
+//     server: SocketAddr,
+// }
+
+// #[derive(StructOpt)]
+// #[allow(clippy::enum_variant_names)]
+// enum AuthSubcommand {
+//     GenerateSharedToken(GenerateSharedToken),
+//     GenerateJwtHS256Key,
+//     GenerateJwtHS256ServerToken(GenerateJwtHS256ServerToken),
+// }
 
 // Only supported on x86_64 Linux machines and on FreeBSD
 #[cfg(any(
     all(target_os = "linux", target_arch = "x86_64"),
     target_os = "freebsd"
 ))]
-fn main() {
+#[tokio::main]
+async fn main() {
     init_logging();
+    // std::process::exit({
+    // let command = Command::from_args();
 
     let incr_env_strs = ["CARGO_BUILD_INCREMENTAL", "CARGO_INCREMENTAL"];
     incr_env_strs
@@ -68,7 +134,7 @@ fn main() {
         },
     };
 
-    std::process::exit(match run(command) {
+    std::process::exit(match run(command).await {
         Ok(s) => s,
         Err(e) => {
             eprintln!("sccache-dist: error: {}", e);
@@ -79,7 +145,11 @@ fn main() {
             2
         }
     });
+    // });
 }
+
+/// These correspond to the values of `log::LevelFilter`.
+// const LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
 fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
     format!("{} {}", server_id.addr(), auth_token)
@@ -119,6 +189,13 @@ fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Result<Ser
     jwt::decode::<ServerJwt>(server_token, &dummy_key, &validation)
         .map(|res| res.claims.server_id)
         .map_err(Into::into)
+    // let dummy_key = jwt::DecodingKey::from_secret(b"secret");
+    // jwt::decode::<ServerJwt>(server_token, &dummy_key, &validation)
+    //     .map(|res| res.claims.server_id)
+    //     .map_err(Into::into)
+    // jwt::dangerous_insecure_decode::<ServerJwt>(server_token)
+    //     .map(|res| res.claims.server_id)
+    //     .map_err(Into::into)
 }
 fn check_jwt_server_token(
     server_token: &str,
@@ -131,7 +208,7 @@ fn check_jwt_server_token(
         .ok()
 }
 
-fn run(command: Command) -> Result<i32> {
+async fn run(command: Command) -> Result<i32> {
     match command {
         Command::Auth(AuthSubcommand::Base64 { num_bytes }) => {
             let mut bytes = vec![0; num_bytes];
@@ -145,6 +222,23 @@ fn run(command: Command) -> Result<i32> {
             server_id,
         }) => {
             let header = jwt::Header::new(jwt::Algorithm::HS256);
+
+            // let secret_key = if let Some(config_path) = config {
+            //     if let Some(config) = scheduler_config::from_path(&config_path)? {
+            //         match config.server_auth {
+            //             scheduler_config::ServerAuth::JwtHS256 { secret_key } => secret_key,
+            //             scheduler_config::ServerAuth::Insecure
+            //             | scheduler_config::ServerAuth::Token { token: _ } => {
+            //                 bail!("Scheduler not configured with JWT HS256")
+            //             }
+            //         }
+            //     } else {
+            //         bail!("Could not read config");
+            //     }
+            // } else {
+            //     secret_key.expect("missing secret-key in parsed subcommand")
+            // };
+
             let secret_key = BASE64_URL_SAFE_ENGINE.decode(secret_key)?;
             let token = create_jwt_server_token(server_id, &header, &secret_key)
                 .context("Failed to create server token")?;
@@ -170,6 +264,7 @@ fn run(command: Command) -> Result<i32> {
                     jwks_url,
                 } => Box::new(
                     token_check::ValidJWTCheck::new(audience, issuer, &jwks_url)
+                        .await
                         .context("Failed to create a checker for valid JWTs")?,
                 ),
                 scheduler_config::ClientAuth::Mozilla { required_groups } => {
@@ -184,10 +279,10 @@ fn run(command: Command) -> Result<i32> {
                 scheduler_config::ServerAuth::Insecure => {
                     warn!("Scheduler starting with DANGEROUSLY_INSECURE server authentication");
                     let token = INSECURE_DIST_SERVER_TOKEN;
-                    Box::new(move |server_token| check_server_token(server_token, token))
+                    Arc::new(move |server_token| check_server_token(server_token, token))
                 }
                 scheduler_config::ServerAuth::Token { token } => {
-                    Box::new(move |server_token| check_server_token(server_token, &token))
+                    Arc::new(move |server_token| check_server_token(server_token, &token))
                 }
                 scheduler_config::ServerAuth::JwtHS256 { secret_key } => {
                     let secret_key = BASE64_URL_SAFE_ENGINE
@@ -203,7 +298,7 @@ fn run(command: Command) -> Result<i32> {
                         validation.validate_nbf = false;
                         validation
                     };
-                    Box::new(move |server_token| {
+                    Arc::new(move |server_token| {
                         check_jwt_server_token(server_token, &secret_key, &validation)
                     })
                 }
@@ -217,7 +312,7 @@ fn run(command: Command) -> Result<i32> {
                 check_client_auth,
                 check_server_auth,
             );
-            http_scheduler.start()?;
+            http_scheduler.start().await?;
             unreachable!();
         }
 
@@ -294,8 +389,8 @@ fn run(command: Command) -> Result<i32> {
                 server,
             )
             .context("Failed to create sccache HTTP server instance")?;
-            http_server.start()?;
-            unreachable!();
+            http_server.start().await?;
+            unreachable!("TODO");
         }
     }
 }
@@ -399,8 +494,9 @@ impl Default for Scheduler {
     }
 }
 
+#[async_trait]
 impl SchedulerIncoming for Scheduler {
-    fn handle_alloc_job(
+    async fn handle_alloc_job(
         &self,
         requester: &dyn SchedulerOutgoing,
         tc: Toolchain,
@@ -499,6 +595,7 @@ impl SchedulerIncoming for Scheduler {
             need_toolchain,
         } = requester
             .do_assign_job(server_id, job_id, tc, auth.clone())
+            .await
             .with_context(|| {
                 // LOCKS
                 let mut servers = self.servers.lock().unwrap();
@@ -717,7 +814,7 @@ impl SchedulerIncoming for Scheduler {
 pub struct Server {
     builder: Box<dyn BuilderIncoming>,
     cache: Mutex<TcCache>,
-    job_toolchains: Mutex<HashMap<JobId, Toolchain>>,
+    job_toolchains: tokio::sync::Mutex<HashMap<JobId, Toolchain>>,
 }
 
 impl Server {
@@ -731,18 +828,19 @@ impl Server {
         Ok(Server {
             builder,
             cache: Mutex::new(cache),
-            job_toolchains: Mutex::new(HashMap::new()),
+            job_toolchains: tokio::sync::Mutex::new(HashMap::new()),
         })
     }
 }
 
+#[async_trait]
 impl ServerIncoming for Server {
-    fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
+    async fn handle_assign_job(&self, job_id: JobId, tc: Toolchain) -> Result<AssignJobResult> {
         let need_toolchain = !self.cache.lock().unwrap().contains_toolchain(&tc);
         assert!(self
             .job_toolchains
             .lock()
-            .unwrap()
+            .await
             .insert(job_id, tc)
             .is_none());
         let state = if need_toolchain {
@@ -756,18 +854,19 @@ impl ServerIncoming for Server {
             need_toolchain,
         })
     }
-    fn handle_submit_toolchain(
+    async fn handle_submit_toolchain(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
-        tc_rdr: ToolchainReader,
+        tc_rdr: ToolchainReader<'_>,
     ) -> Result<SubmitToolchainResult> {
         requester
             .do_update_job_state(job_id, JobState::Ready)
+            .await
             .context("Updating job state failed")?;
         // TODO: need to lock the toolchain until the container has started
         // TODO: can start prepping container
-        let tc = match self.job_toolchains.lock().unwrap().get(&job_id).cloned() {
+        let tc = match self.job_toolchains.lock().await.get(&job_id).cloned() {
             Some(tc) => tc,
             None => return Ok(SubmitToolchainResult::JobNotFound),
         };
@@ -783,18 +882,19 @@ impl ServerIncoming for Server {
             .map(|_| SubmitToolchainResult::Success)
             .unwrap_or(SubmitToolchainResult::CannotCache))
     }
-    fn handle_run_job(
+    async fn handle_run_job(
         &self,
         requester: &dyn ServerOutgoing,
         job_id: JobId,
         command: CompileCommand,
         outputs: Vec<String>,
-        inputs_rdr: InputsReader,
+        inputs_rdr: InputsReader<'_>,
     ) -> Result<RunJobResult> {
         requester
             .do_update_job_state(job_id, JobState::Started)
+            .await
             .context("Updating job state failed")?;
-        let tc = self.job_toolchains.lock().unwrap().remove(&job_id);
+        let tc = self.job_toolchains.lock().await.remove(&job_id);
         let res = match tc {
             None => Ok(RunJobResult::JobNotFound),
             Some(tc) => {
@@ -812,6 +912,7 @@ impl ServerIncoming for Server {
         };
         requester
             .do_update_job_state(job_id, JobState::Complete)
+            .await
             .context("Updating job state failed")?;
         res
     }
