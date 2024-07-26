@@ -110,6 +110,7 @@ pub fn sccache_command() -> Command {
     use sccache::util::OsStrExt;
 
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin("sccache"));
+    // cmd.env_remove(key)
     for (var, _) in env::vars_os() {
         if var.starts_with("SCCACHE_") {
             cmd.env_remove(var);
@@ -291,6 +292,8 @@ impl DistSystem {
                 "RUST_BACKTRACE=1",
                 "--network",
                 "host",
+                // "-p",
+                // "10500:10500",
                 "-v",
                 &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
                 "-v",
@@ -322,7 +325,7 @@ impl DistSystem {
         wait_for_http(
             &self.client,
             scheduler_url,
-            Duration::from_millis(100),
+            Duration::from_millis(1000),
             MAX_STARTUP_WAIT,
         )
         .await;
@@ -366,10 +369,10 @@ impl DistSystem {
                 "--name",
                 &server_name,
                 "-e",
-                "SCCACHE_LOG=debug",
+                "SCCACHE_LOG=error",
                 "-e",
                 "RUST_BACKTRACE=1",
-                "--network",
+                "--network", // Maybe map ports here??
                 "host",
                 "-v",
                 &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
@@ -434,7 +437,9 @@ impl DistSystem {
                 .unwrap();
 
         let handle = tokio::spawn(async move {
+            println!("Starting server");
             server.start().await.unwrap();
+            println!("Should be unreachable");
             unreachable!();
         });
         //self.server_handles.push(handle);
@@ -650,25 +655,61 @@ async fn wait_for_http(
     interval: Duration,
     max_wait: Duration,
 ) {
+    use tokio::time::{sleep, timeout};
+
+    let url_clone = url.clone();
+
     let try_connect = async move {
-        let url = url.to_url();
+        // let url = url.parse::<reqwest::Url>().expect("Invalid URL");
+        let url = url_clone.to_url();
 
         loop {
-            if let Ok(Ok(_)) = tokio::time::timeout(interval, client.get(url.clone()).send()).await
-            {
-                break;
-            };
+            match timeout(interval, client.get(url.clone()).send()).await {
+                Ok(Ok(response)) => {
+                    if response.status().is_success() {
+                        println!(
+                            "Received successful response with status: {:?}",
+                            response.status()
+                        );
+                        break;
+                    } else {
+                        eprintln!("Received non-success status: {:?}", response.status());
+                    }
+                }
+                Ok(Err(e)) => {
+                    eprintln!("Request error: {}", e);
+                }
+                Err(e) => {
+                    eprintln!("Request timeout error: {}", e);
+                }
+            }
+            sleep(Duration::from_secs(1)).await
         }
     };
 
-    if let Err(e) = tokio::time::timeout(max_wait, try_connect).await {
-        panic!("wait timed out, last error result: {}", e)
+    match timeout(max_wait, try_connect).await {
+        Ok(_) => println!("Successfully connected to {:?}", url),
+        Err(e) => println!("wait timed out, last error result: {}", e),
     }
+    // let try_connect = async move {
+    //     let url = url.to_url();
+
+    //     loop {
+    //         if let Ok(Ok(_)) = tokio::time::timeout(interval, client.get(url.clone()).send()).await
+    //         {
+    //             break;
+    //         };
+    //     }
+    // };
+
+    // if let Err(e) = tokio::time::timeout(max_wait, try_connect).await {
+    //     panic!("wait timed out, last error result: {}", e)
+    // }
 }
 
 async fn wait_for<F: std::future::Future<Output = Result<(), String>>>(f: F, max_wait: Duration) {
-    tokio::time::timeout(max_wait, f)
-        .await
-        .unwrap()
-        .expect("wait timed out")
+    let res = tokio::time::timeout(max_wait, f).await;
+
+    println!("WAIT_FOR result = {res:#?}");
+    // .expect("wait timed out")
 }
