@@ -287,7 +287,7 @@ impl DistSystem {
                 "-e",
                 "SCCACHE_NO_DAEMON=1",
                 "-e",
-                "SCCACHE_LOG=debug",
+                "SCCACHE_LOG=info",
                 "-e",
                 "RUST_BACKTRACE=1",
                 "--network",
@@ -369,7 +369,7 @@ impl DistSystem {
                 "--name",
                 &server_name,
                 "-e",
-                "SCCACHE_LOG=error",
+                "SCCACHE_LOG=info",
                 "-e",
                 "RUST_BACKTRACE=1",
                 "--network", // Maybe map ports here??
