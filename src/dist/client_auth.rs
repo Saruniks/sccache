@@ -93,7 +93,6 @@ mod code_grant_pkce {
     use hyper::{Method, Request, Response, StatusCode};
     use rand::{rngs::OsRng, RngCore};
     use serde::{Deserialize, Serialize};
-    use sha2::{Digest, Sha256};
     use std::collections::HashMap;
     use std::sync::mpsc;
     use std::sync::Mutex;
