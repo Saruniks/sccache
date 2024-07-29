@@ -20,6 +20,8 @@ use serial_test::serial;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use sccache::errors::*;
 
@@ -150,10 +152,15 @@ async fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
+    sleep(Duration::from_secs(5)).await;
     basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
+    sleep(Duration::from_secs(5)).await;
+
     system.restart_server(&server_handle).await;
+    sleep(Duration::from_secs(5)).await;
     basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    sleep(Duration::from_secs(5)).await;
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());

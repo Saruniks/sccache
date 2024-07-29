@@ -195,7 +195,8 @@ pub mod urls {
         scheduler_url
             .join(&format!(
                 "/api/v1/scheduler/server_certificate/{}",
-                server_id.addr()
+                // "/api/v1/scheduler/server_certificate/172.18.0.1:12345",
+                server_id.addr() // Maybe here fix addr?
             ))
             .expect("failed to create server certificate url")
     }
@@ -218,6 +219,8 @@ pub mod urls {
     pub fn server_assign_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/assign_job/{}",
+            // "https://172.18.0.1:12345/api/v1/distserver/assign_job/{}",
+            // "https://172.18.0.1:12345/api/v1/distserver/assign_job/{}",
             server_id.addr(),
             job_id
         );
@@ -226,6 +229,7 @@ pub mod urls {
     pub fn server_submit_toolchain(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/submit_toolchain/{}",
+            // "https://172.18.0.1:12345/api/v1/distserver/submit_toolchain/{}",
             server_id.addr(),
             job_id
         );
@@ -234,6 +238,7 @@ pub mod urls {
     pub fn server_run_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/run_job/{}",
+            // "https://172.18.0.1:12345/api/v1/distserver/run_job/{}",
             server_id.addr(),
             job_id
         );
@@ -284,73 +289,82 @@ mod server {
     pub(crate) fn create_https_cert_and_privkey(
         addr: SocketAddr,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-        let mut rng = OsRng;
-        let bits = 2048;
-        let rsa_key = rsa::RSAPrivateKey::new(&mut rng, bits)?;
+        let rsa_key = openssl::rsa::Rsa::<openssl::pkey::Private>::generate(2048)
+            .context("failed to generate rsa privkey")?;
+        let privkey_pem = rsa_key
+            .private_key_to_pem()
+            .context("failed to create pem from rsa privkey")?;
+        let privkey: openssl::pkey::PKey<openssl::pkey::Private> =
+            openssl::pkey::PKey::from_rsa(rsa_key)
+                .context("failed to create openssl pkey from rsa privkey")?;
+        let mut builder =
+            openssl::x509::X509::builder().context("failed to create x509 builder")?;
 
-        let sk_pkcs8 = rsa::PrivateKeyPemEncoding::to_pem_pkcs8(&rsa_key)?;
-        let pk_pkcs8 = rsa::PublicKeyPemEncoding::to_pem_pkcs8(&*rsa_key)?;
+        // Populate the certificate with the necessary parts, mostly from mkcert in openssl
+        builder
+            .set_version(2)
+            .context("failed to set x509 version")?;
+        let serial_number = openssl::bn::BigNum::from_u32(0)
+            .and_then(|bn| bn.to_asn1_integer())
+            .context("failed to create openssl asn1 0")?;
+        builder
+            .set_serial_number(serial_number.as_ref())
+            .context("failed to set x509 serial number")?;
+        let not_before = openssl::asn1::Asn1Time::days_from_now(0)
+            .context("failed to create openssl not before asn1")?;
+        builder
+            .set_not_before(not_before.as_ref())
+            .context("failed to set not before on x509")?;
+        let not_after = openssl::asn1::Asn1Time::days_from_now(365)
+            .context("failed to create openssl not after asn1")?;
+        builder
+            .set_not_after(not_after.as_ref())
+            .context("failed to set not after on x509")?;
+        builder
+            .set_pubkey(privkey.as_ref())
+            .context("failed to set pubkey for x509")?;
 
-        // convert to picky
-        let sk = PrivateKey::from_pem_str(sk_pkcs8.as_str())?;
-        let pk = PublicKey::from_pem_str(pk_pkcs8.as_str())?;
+        let mut name = openssl::x509::X509Name::builder()?;
+        name.append_entry_by_nid(openssl::nid::Nid::COMMONNAME, &addr.to_string())?;
+        let name = name.build();
 
-        let today = chrono::Utc::now().naive_utc();
-        let expires = today + chrono::Duration::days(365);
-        let start = UTCDate::new(
-            today.year() as u16,
-            today.month() as u8,
-            today.day() as u8,
-            today.time().hour() as u8,
-            today.time().minute() as u8,
-            today.time().second() as u8,
-        )
-        .unwrap();
-        let end = UTCDate::new(
-            expires.year() as u16,
-            expires.month() as u8,
-            expires.day() as u8,
-            expires.time().hour() as u8,
-            expires.time().minute() as u8,
-            expires.time().second() as u8,
-        )
-        .unwrap();
+        builder
+            .set_subject_name(&name)
+            .context("failed to set subject name")?;
+        builder
+            .set_issuer_name(&name)
+            .context("failed to set issuer name")?;
 
-        let extended_key_usage = ExtendedKeyUsage::new(vec![picky::oids::kp_server_auth()]);
+        // Add the SubjectAlternativeName
+        let extension = openssl::x509::extension::SubjectAlternativeName::new()
+            .ip(&addr.ip().to_string())
+            .build(&builder.x509v3_context(None, None))
+            .context("failed to build SAN extension for x509")?;
+        builder
+            .append_extension(extension)
+            .context("failed to append SAN extension for x509")?;
 
-        let name = addr.to_string();
+        // Add ExtendedKeyUsage
+        let ext_key_usage = openssl::x509::extension::ExtendedKeyUsage::new()
+            .server_auth()
+            .build()
+            .context("failed to build EKU extension for x509")?;
+        builder
+            .append_extension(ext_key_usage)
+            .context("fails to append EKU extension for x509")?;
 
-        let issuer_name = DirectoryName::new_common_name(name.clone());
-        let subject_name = DirectoryName::new_common_name(name);
-        let octets = match addr.ip() {
-            IpAddr::V4(inner) => inner.octets().to_vec(),
-            IpAddr::V6(inner) => inner.octets().to_vec(),
-        };
-        let subject_alt_name = GeneralNames::new(picky::x509::name::GeneralName::IpAddress(octets));
+        // Finish the certificate
+        builder
+            .sign(&privkey, openssl::hash::MessageDigest::sha1())
+            .context("failed to sign x509 with sha1")?;
+        let cert: openssl::x509::X509 = builder.build();
+        let cert_pem = cert.to_pem().context("failed to create pem from x509")?;
+        let cert_digest = cert
+            .digest(openssl::hash::MessageDigest::sha256())
+            .context("failed to create digest of x509 certificate")?
+            .as_ref()
+            .to_owned();
 
-        let cert = CertificateBuilder::new()
-            .ca(false)
-            .validity(start, end)
-            .subject(subject_name, pk)
-            .subject_alt_name(subject_alt_name)
-            .serial_number(vec![1]) // cannot be 0 according to picky internal notes
-            .signature_hash_type(SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1))
-            .extended_key_usage(extended_key_usage)
-            .self_signed(issuer_name, &sk)
-            .build()?;
-
-        let cert_digest = {
-            let der = cert.to_der()?;
-            let mut state = sha2::Sha256::new();
-            state.update(&der);
-            state.finalize()
-        }
-        .as_slice()
-        .to_vec();
-
-        let cert_pem = cert.to_pem()?;
-        let cert_pem = cert_pem.to_string().as_bytes().to_vec();
-        let privkey_pem = sk_pkcs8.as_bytes().to_vec();
         Ok((cert_digest, cert_pem, privkey_pem))
     }
 
@@ -656,6 +670,7 @@ mod server {
                     requester,
                 ))
                 .recover(handle_rejection)
+                .with(warp::log("warp::requests"))
             }
 
             fn make_401_with_body(short_err: &str, body: Option<ClientVisibleMsg>) -> Response {
@@ -689,6 +704,7 @@ mod server {
             }
 
             async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+                trace!("Rejeceted");
                 if err.is_not_found() {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
                 } else if let Some(e) = err.find::<warp::reject::MissingHeader>() {
@@ -989,6 +1005,7 @@ mod server {
                 .or(job_state(check_server_auth, s.clone()))
                 .or(status(s))
                 .recover(handle_rejection)
+                .with(warp::log("warp::requests"))
             }
 
             // POST /api/v1/scheduler/alloc_job
@@ -1550,10 +1567,12 @@ mod server {
                 }
             });
 
+            // trace!("Api: {:#?}", api.clone());
+
             warp::serve(api)
-                // .tls()
-                // .cert(cert_pem)
-                // .key(privkey_pem)
+                .tls()
+                .cert(cert_pem)
+                .key(privkey_pem)
                 .run(public_addr)
                 .await;
 
@@ -1604,6 +1623,7 @@ mod client {
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::Mutex;
@@ -1698,6 +1718,7 @@ mod client {
     impl dist::Client for Client {
         async fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
             let scheduler_url = self.scheduler_url.clone();
+            // let scheduler_url = reqwest::Url::from_str("http://127.0.0.1:10500").unwrap();
             let url = urls::scheduler_alloc_job(&scheduler_url);
             let mut req = self.client.lock().await.post(url);
             req = req.bearer_auth(self.auth_token.clone()).bincode(&tc)?;
