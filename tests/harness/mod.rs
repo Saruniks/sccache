@@ -42,10 +42,10 @@ pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     if !sccache_command()
         .arg("--start-server")
         // Uncomment following lines to debug locally.
-        // .env("SCCACHE_LOG", "debug")
+        .env("SCCACHE_LOG", "debug")
         // .env(
-        //     "SCCACHE_ERROR_LOG",
-        //     env::temp_dir().join("sccache_local_daemon.txt"),
+        // "SCCACHE_ERROR_LOG",
+        // env::temp_dir().join("sccache_local_daemon.txt"),
         // )
         .env("SCCACHE_CONF", cfg_path)
         .env("SCCACHE_CACHED_CONF", cached_cfg_path)
@@ -292,6 +292,8 @@ impl DistSystem {
                 "RUST_BACKTRACE=1",
                 "--network",
                 "host",
+                // "--network",
+                // "my_bridge_network",
                 // "-p",
                 // "10500:10500",
                 "-v",
@@ -369,11 +371,19 @@ impl DistSystem {
                 "--name",
                 &server_name,
                 "-e",
+                "RUST_LOG=warp::requests=trace,warp=trace",
+                // "-e",
+                // "SCCACHE_NO_DAEMON=1",
+                "-e",
                 "SCCACHE_LOG=info",
                 "-e",
                 "RUST_BACKTRACE=1",
+                // "--network",
+                // "my_bridge_network",
                 "--network", // Maybe map ports here??
                 "host",
+                // "-p",
+                // "12345:12345",
                 "-v",
                 &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
                 "-v",
@@ -401,6 +411,7 @@ impl DistSystem {
 
         check_output(&output);
 
+        // let server_ip = IpAddr::from_str("0.0.0.0").unwrap();
         let server_ip = IpAddr::from_str("127.0.0.1").unwrap();
         let server_cfg = sccache_server_cfg(&self.tmpdir, self.scheduler_url(), server_ip);
         fs::File::create(&server_cfg_path)
@@ -426,6 +437,7 @@ impl DistSystem {
     ) -> ServerHandle {
         let server_addr = {
             let ip = IpAddr::from_str("127.0.0.1").unwrap();
+            // let ip = IpAddr::from_str("0.0.0.0").unwrap();
             let listener = net::TcpListener::bind(SocketAddr::from((ip, 0)))
                 .await
                 .unwrap();
@@ -442,7 +454,7 @@ impl DistSystem {
             println!("Should be unreachable");
             unreachable!();
         });
-        //self.server_handles.push(handle);
+        // self.server_handles.push(handle);
 
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
@@ -507,6 +519,7 @@ impl DistSystem {
 
     pub fn scheduler_url(&self) -> HTTPUrl {
         let url = format!("http://127.0.0.1:{}", SCHEDULER_PORT);
+        // let url = format!("http://172.18.0.1:{}", SCHEDULER_PORT);
         HTTPUrl::from_url(reqwest::Url::parse(&url).unwrap())
     }
 

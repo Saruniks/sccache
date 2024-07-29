@@ -20,7 +20,7 @@ use crate::compiler::{
 };
 #[cfg(feature = "dist-client")]
 use crate::config;
-use crate::config::Config;
+use crate::config::{Config, HTTPUrl};
 use crate::dist;
 use crate::jobserver::Client;
 use crate::mock_command::{CommandCreatorSync, ProcessCommandCreator};
@@ -50,6 +50,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::{ExitStatus, Output};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
@@ -66,6 +67,7 @@ use tokio::{
 use tokio_serde::Framed;
 use tokio_util::codec::{length_delimited, LengthDelimitedCodec};
 use tower::Service;
+use url::Url;
 
 use crate::errors::*;
 
@@ -199,6 +201,9 @@ impl DistClientContainer {
         let config = DistClientConfig {
             pool: pool.clone(),
             scheduler_url: config.dist.scheduler_url.clone(),
+            // scheduler_url: Some(HTTPUrl::from_url(
+                // Url::from_str("http://127.0.0.1:10500").unwrap(),
+            // )),
             auth: config.dist.auth.clone(),
             cache_dir: config.dist.cache_dir.clone(),
             toolchain_cache_size: config.dist.toolchain_cache_size,
