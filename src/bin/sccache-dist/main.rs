@@ -35,69 +35,6 @@ mod token_check;
 
 pub const INSECURE_DIST_SERVER_TOKEN: &str = "dangerously_insecure_server";
 
-// #[derive(StructOpt)]
-// enum Command {
-//     Auth(AuthSubcommand),
-//     Scheduler(SchedulerSubcommand),
-//     Server(ServerSubcommand),
-// }
-
-// #[derive(StructOpt)]
-// #[structopt(rename_all = "kebab-case")]
-// struct SchedulerSubcommand {
-//     /// Use the server config file at PATH
-//     #[structopt(long, value_name = "PATH")]
-//     config: PathBuf,
-
-//     /// Log to the syslog with LEVEL
-//     #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
-//     syslog: Option<String>,
-// }
-
-// #[derive(StructOpt)]
-// #[structopt(rename_all = "kebab-case")]
-// struct ServerSubcommand {
-//     /// Use the server config file at PATH
-//     #[structopt(long, value_name = "PATH")]
-//     config: PathBuf,
-
-//     /// Log to the syslog with LEVEL
-//     #[structopt(long, value_name = "LEVEL", possible_values = LOG_LEVELS)]
-//     syslog: Option<String>,
-// }
-
-// #[derive(StructOpt)]
-// #[structopt(rename_all = "kebab-case")]
-// struct GenerateSharedToken {
-//     /// Use the specified number of bits for randomness
-//     #[structopt(long, default_value = "256")]
-//     bits: usize,
-// }
-
-// #[derive(StructOpt)]
-// #[structopt(rename_all = "kebab-case")]
-// struct GenerateJwtHS256ServerToken {
-//     /// Use the key from the scheduler config file
-//     #[structopt(long, value_name = "PATH")]
-//     config: Option<PathBuf>,
-
-//     /// Use specified key to create the token
-//     #[structopt(long, value_name = "KEY", required_unless = "config")]
-//     secret_key: Option<String>,
-
-//     /// Generate a key for the specified server
-//     #[structopt(long, value_name = "SERVER_ADDR", required_unless = "secret_key")]
-//     server: SocketAddr,
-// }
-
-// #[derive(StructOpt)]
-// #[allow(clippy::enum_variant_names)]
-// enum AuthSubcommand {
-//     GenerateSharedToken(GenerateSharedToken),
-//     GenerateJwtHS256Key,
-//     GenerateJwtHS256ServerToken(GenerateJwtHS256ServerToken),
-// }
-
 // Only supported on x86_64 Linux machines and on FreeBSD
 #[cfg(any(
     all(target_os = "linux", target_arch = "x86_64"),
@@ -106,8 +43,6 @@ pub const INSECURE_DIST_SERVER_TOKEN: &str = "dangerously_insecure_server";
 #[tokio::main]
 async fn main() {
     init_logging();
-    // std::process::exit({
-    // let command = Command::from_args();
 
     let incr_env_strs = ["CARGO_BUILD_INCREMENTAL", "CARGO_INCREMENTAL"];
     incr_env_strs
@@ -145,11 +80,7 @@ async fn main() {
             2
         }
     });
-    // });
 }
-
-/// These correspond to the values of `log::LevelFilter`.
-// const LOG_LEVELS: &[&str] = &["error", "warn", "info", "debug", "trace"];
 
 fn create_server_token(server_id: ServerId, auth_token: &str) -> String {
     format!("{} {}", server_id.addr(), auth_token)
@@ -189,13 +120,6 @@ fn dangerous_insecure_extract_jwt_server_token(server_token: &str) -> Result<Ser
     jwt::decode::<ServerJwt>(server_token, &dummy_key, &validation)
         .map(|res| res.claims.server_id)
         .map_err(Into::into)
-    // let dummy_key = jwt::DecodingKey::from_secret(b"secret");
-    // jwt::decode::<ServerJwt>(server_token, &dummy_key, &validation)
-    //     .map(|res| res.claims.server_id)
-    //     .map_err(Into::into)
-    // jwt::dangerous_insecure_decode::<ServerJwt>(server_token)
-    //     .map(|res| res.claims.server_id)
-    //     .map_err(Into::into)
 }
 fn check_jwt_server_token(
     server_token: &str,
@@ -222,23 +146,6 @@ async fn run(command: Command) -> Result<i32> {
             server_id,
         }) => {
             let header = jwt::Header::new(jwt::Algorithm::HS256);
-
-            // let secret_key = if let Some(config_path) = config {
-            //     if let Some(config) = scheduler_config::from_path(&config_path)? {
-            //         match config.server_auth {
-            //             scheduler_config::ServerAuth::JwtHS256 { secret_key } => secret_key,
-            //             scheduler_config::ServerAuth::Insecure
-            //             | scheduler_config::ServerAuth::Token { token: _ } => {
-            //                 bail!("Scheduler not configured with JWT HS256")
-            //             }
-            //         }
-            //     } else {
-            //         bail!("Could not read config");
-            //     }
-            // } else {
-            //     secret_key.expect("missing secret-key in parsed subcommand")
-            // };
-
             let secret_key = BASE64_URL_SAFE_ENGINE.decode(secret_key)?;
             let token = create_jwt_server_token(server_id, &header, &secret_key)
                 .context("Failed to create server token")?;
@@ -390,7 +297,7 @@ async fn run(command: Command) -> Result<i32> {
             )
             .context("Failed to create sccache HTTP server instance")?;
             http_server.start().await?;
-            unreachable!("TODO");
+            unreachable!();
         }
     }
 }

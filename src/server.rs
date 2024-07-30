@@ -201,9 +201,6 @@ impl DistClientContainer {
         let config = DistClientConfig {
             pool: pool.clone(),
             scheduler_url: config.dist.scheduler_url.clone(),
-            // scheduler_url: Some(HTTPUrl::from_url(
-                // Url::from_str("http://127.0.0.1:10500").unwrap(),
-            // )),
             auth: config.dist.auth.clone(),
             cache_dir: config.dist.cache_dir.clone(),
             toolchain_cache_size: config.dist.toolchain_cache_size,

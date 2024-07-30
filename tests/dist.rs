@@ -9,7 +9,6 @@ extern crate serde_json;
 use crate::harness::{
     get_stats, sccache_command, start_local_daemon, stop_local_daemon, write_json_cfg, write_source,
 };
-// use assert_cmd::prelude::*;
 use async_trait::async_trait;
 use sccache::config::HTTPUrl;
 use sccache::dist::{
@@ -36,54 +35,71 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
     ];
     let source_file = "x.c";
     let obj_file = "x.o";
-
     write_source(tmpdir, source_file, "#if !defined(SCCACHE_TEST_DEFINE)\n#error SCCACHE_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
-    // Create the command once and reuse it
-    let mut base_command: Command = sccache_command();
 
-    // Command::new("/home/ubuntu-user/sccache/target/debug/sccache");
-
-    println!("FIRST_COMMAND = {:#?}", base_command);
-
-    // let command = base_command.args(["gcc", "-c", "/tmp/x.c", "-o", "/tmp/x.o"]);
-
-    // println!("BASE_COMMAND = {:#?}", command);
-
-    // Clone the base command and add arguments to it
-    // let command = base_command.args([
-    //     std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()),
-    //     "-c".to_string(),
-    //     // "-DSCCACHE_TEST_DEFINE".to_string(),
-    // ]);
-
-    // Use tokio command here somehow...
-
-    // println!(
-    //     "COMMAND = {:#?}",
-    //     command
-    //         // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
-    //         // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
-    //         .arg(tmpdir.join(source_file))
-    //         .arg("-o")
-    //         .arg(tmpdir.join(obj_file))
-    //         .envs(envs.clone()) // .status()
-    //                             // .unwrap()
-    // );
-
-    assert!(base_command
-        // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
-        // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
-        .arg("gcc")
-        .arg("-DSCCACHE_TEST_DEFINE")
-        .arg("-c")
+    // Use tokio command instead
+    assert!(sccache_command()
+        .args([
+            std::env::var("CC")
+                .unwrap_or_else(|_| "gcc".to_string())
+                .as_str(),
+            "-c",
+            "-DSCCACHE_TEST_DEFINE",
+        ])
         .arg(tmpdir.join(source_file))
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
         .status()
         .unwrap()
-        // .await
         .success())
+
+    // // Create the command once and reuse it
+    // let mut base_command: Command = sccache_command();
+
+    // // Command::new("/home/ubuntu-user/sccache/target/debug/sccache");
+
+    // println!("FIRST_COMMAND = {:#?}", base_command);
+
+    // // let command = base_command.args(["gcc", "-c", "/tmp/x.c", "-o", "/tmp/x.o"]);
+
+    // // println!("BASE_COMMAND = {:#?}", command);
+
+    // // Clone the base command and add arguments to it
+    // // let command = base_command.args([
+    // //     std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()),
+    // //     "-c".to_string(),
+    // //     // "-DSCCACHE_TEST_DEFINE".to_string(),
+    // // ]);
+
+    // // Use tokio command here somehow...
+
+    // // println!(
+    // //     "COMMAND = {:#?}",
+    // //     command
+    // //         // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
+    // //         // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
+    // //         .arg(tmpdir.join(source_file))
+    // //         .arg("-o")
+    // //         .arg(tmpdir.join(obj_file))
+    // //         .envs(envs.clone()) // .status()
+    // //                             // .unwrap()
+    // // );
+
+    // assert!(base_command
+    //     // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
+    //     // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
+    //     .arg("gcc")
+    //     .arg("-DSCCACHE_TEST_DEFINE")
+    //     .arg("-c")
+    //     .arg(tmpdir.join(source_file))
+    //     .arg("-o")
+    //     .arg(tmpdir.join(obj_file))
+    //     .envs(envs)
+    //     .status()
+    //     .unwrap()
+    //     // .await
+    //     .success())
 }
 
 pub fn dist_test_sccache_client_cfg(
