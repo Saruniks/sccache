@@ -2903,7 +2903,6 @@ dependencies = [
  "once_cell",
  "opendal",
  "openssl",
- "percent-encoding",
  "picky",
  "predicates",
  "rand",

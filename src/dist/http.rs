@@ -68,7 +68,7 @@ mod common {
     }
 
     #[cfg(any(feature = "dist-server", feature = "dist-client"))]
-    pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
+    pub async fn bincode_req_fut<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::RequestBuilder,
     ) -> Result<T> {
         // Work around tiny_http issue #151 by disabling HTTP pipeline with
@@ -195,8 +195,7 @@ pub mod urls {
         scheduler_url
             .join(&format!(
                 "/api/v1/scheduler/server_certificate/{}",
-                // "/api/v1/scheduler/server_certificate/172.18.0.1:12345",
-                server_id.addr() // Maybe here fix addr?
+                server_id.addr()
             ))
             .expect("failed to create server certificate url")
     }
@@ -219,8 +218,6 @@ pub mod urls {
     pub fn server_assign_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/assign_job/{}",
-            // "https://172.18.0.1:12345/api/v1/distserver/assign_job/{}",
-            // "https://172.18.0.1:12345/api/v1/distserver/assign_job/{}",
             server_id.addr(),
             job_id
         );
@@ -229,7 +226,6 @@ pub mod urls {
     pub fn server_submit_toolchain(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/submit_toolchain/{}",
-            // "https://172.18.0.1:12345/api/v1/distserver/submit_toolchain/{}",
             server_id.addr(),
             job_id
         );
@@ -238,7 +234,6 @@ pub mod urls {
     pub fn server_run_job(server_id: ServerId, job_id: JobId) -> reqwest::Url {
         let url = format!(
             "https://{}/api/v1/distserver/run_job/{}",
-            // "https://172.18.0.1:12345/api/v1/distserver/run_job/{}",
             server_id.addr(),
             job_id
         );
@@ -266,7 +261,7 @@ mod server {
     use std::time::Duration;
 
     use super::common::{
-        bincode_req, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
+        bincode_req_fut, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
         ReqwestRequestBuilderExt, RunJobHttpRequest, ServerCertificateHttpResponse,
     };
     use super::urls;
@@ -285,6 +280,30 @@ mod server {
     use sha2::Digest;
     use std::net::IpAddr;
     use tokio::sync::Mutex;
+
+    pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
+        req: reqwest::RequestBuilder,
+    ) -> Result<T> {
+        // Work around tiny_http issue #151 by disabling HTTP pipeline with
+        // `Connection: close`.
+        let res = req
+            .header(reqwest::header::CONNECTION, "close")
+            .send()
+            .await?;
+        let status = res.status();
+        let headers = res.headers().clone();
+        let body = res.bytes().await.context("error reading response body")?;
+        if !status.is_success() {
+            Err(anyhow!(
+                "Error {} (Headers={:?}): {}",
+                status.as_u16(),
+                headers,
+                String::from_utf8_lossy(&body)
+            ))
+        } else {
+            bincode::deserialize(&body).map_err(Into::into)
+        }
+    }
 
     pub(crate) fn create_https_cert_and_privkey(
         addr: SocketAddr,
@@ -1459,7 +1478,7 @@ mod server {
         ) -> Result<AssignJobResult> {
             let url = urls::server_assign_job(server_id, job_id);
             let req = self.client.lock().await.post(url);
-            bincode_req(req.bearer_auth(auth).bincode(&tc)?)
+            bincode_req_fut(req.bearer_auth(auth).bincode(&tc)?)
                 .await
                 .context("POST to scheduler assign_job failed")
         }
@@ -1544,8 +1563,8 @@ mod server {
 
                 let client = reqwest::Client::new();
                 loop {
-                    trace!("Performing hearbeat");
-                    match bincode_req(
+                    trace!("Performing heartbeat");
+                    match bincode_req_fut(
                         client
                             .post(heartbeat_url.clone())
                             .bearer_auth(scheduler_auth.clone())
@@ -1566,8 +1585,6 @@ mod server {
                     }
                 }
             });
-
-            // trace!("Api: {:#?}", api.clone());
 
             warp::serve(api)
                 .tls()
@@ -1594,7 +1611,7 @@ mod server {
             state: JobState,
         ) -> Result<UpdateJobStateResult> {
             let url = urls::scheduler_job_state(&self.scheduler_url, job_id);
-            bincode_req(
+            bincode_req_fut(
                 self.client
                     .post(url)
                     .bearer_auth(self.scheduler_auth.clone())
@@ -1609,6 +1626,7 @@ mod server {
 #[cfg(feature = "dist-client")]
 mod client {
     use super::super::cache;
+    use super::server::bincode_req;
     use crate::config;
     use crate::dist::pkg::{InputsPackager, ToolchainPackager};
     use crate::dist::{
@@ -1629,7 +1647,7 @@ mod client {
     use tokio::sync::Mutex;
 
     use super::common::{
-        bincode_req, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
+        bincode_req_fut, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
         ServerCertificateHttpResponse,
     };
     use super::urls;
@@ -1718,7 +1736,6 @@ mod client {
     impl dist::Client for Client {
         async fn do_alloc_job(&self, tc: Toolchain) -> Result<AllocJobResult> {
             let scheduler_url = self.scheduler_url.clone();
-            // let scheduler_url = reqwest::Url::from_str("http://127.0.0.1:10500").unwrap();
             let url = urls::scheduler_alloc_job(&scheduler_url);
             let mut req = self.client.lock().await.post(url);
             req = req.bearer_auth(self.auth_token.clone()).bincode(&tc)?;

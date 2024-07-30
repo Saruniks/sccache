@@ -2843,7 +2843,6 @@ mod test_dist {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
                     server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
-                    // server_id: ServerId::new(([172, 18, 0, 1], 1).into()),
                 },
                 need_toolchain: true,
             })
@@ -2913,7 +2912,6 @@ mod test_dist {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
                     server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
-                    // server_id: ServerId::new(([172, 18, 0, 1], 1).into()),
                 },
                 need_toolchain: true,
             })
@@ -2995,7 +2993,6 @@ mod test_dist {
                     auth: "abcd".to_owned(),
                     job_id: JobId(0),
                     server_id: ServerId::new(([0, 0, 0, 0], 1).into()),
-                    // server_id: ServerId::new(([172, 18, 0, 1], 1).into()),
                 },
                 need_toolchain: true,
             })
