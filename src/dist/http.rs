@@ -36,21 +36,6 @@ mod common {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self>;
         fn bytes(self, bytes: Vec<u8>) -> Self;
     }
-    impl ReqwestRequestBuilderExt for reqwest::blocking::RequestBuilder {
-        fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
-            let bytes =
-                bincode::serialize(bincode).context("Failed to serialize body to bincode")?;
-            Ok(self.bytes(bytes))
-        }
-        fn bytes(self, bytes: Vec<u8>) -> Self {
-            self.header(
-                header::CONTENT_TYPE,
-                mime::APPLICATION_OCTET_STREAM.to_string(),
-            )
-            .header(header::CONTENT_LENGTH, bytes.len())
-            .body(bytes)
-        }
-    }
     impl ReqwestRequestBuilderExt for reqwest::RequestBuilder {
         fn bincode<T: serde::Serialize + ?Sized>(self, bincode: &T) -> Result<Self> {
             let bytes =
@@ -68,7 +53,7 @@ mod common {
     }
 
     #[cfg(any(feature = "dist-server", feature = "dist-client"))]
-    pub async fn bincode_req_fut<T: serde::de::DeserializeOwned + 'static>(
+    pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
         req: reqwest::RequestBuilder,
     ) -> Result<T> {
         // Work around tiny_http issue #151 by disabling HTTP pipeline with
@@ -254,7 +239,7 @@ mod server {
     use std::time::Duration;
 
     use super::common::{
-        bincode_req_fut, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
+        bincode_req, AllocJobHttpResponse, HeartbeatServerHttpRequest, JobJwt,
         ReqwestRequestBuilderExt, RunJobHttpRequest, ServerCertificateHttpResponse,
     };
     use super::urls;
@@ -1444,7 +1429,7 @@ mod server {
         ) -> Result<AssignJobResult> {
             let url = urls::server_assign_job(server_id, job_id);
             let req = self.client.lock().await.post(url);
-            bincode_req_fut(req.bearer_auth(auth).bincode(&tc)?)
+            bincode_req(req.bearer_auth(auth).bincode(&tc)?)
                 .await
                 .context("POST to scheduler assign_job failed")
         }
@@ -1530,7 +1515,7 @@ mod server {
                 let client = new_reqwest_client();
                 loop {
                     trace!("Performing heartbeat");
-                    match bincode_req_fut(
+                    match bincode_req(
                         client
                             .post(heartbeat_url.clone())
                             .bearer_auth(scheduler_auth.clone())
@@ -1577,7 +1562,7 @@ mod server {
             state: JobState,
         ) -> Result<UpdateJobStateResult> {
             let url = urls::scheduler_job_state(&self.scheduler_url, job_id);
-            bincode_req_fut(
+            bincode_req(
                 self.client
                     .post(url)
                     .bearer_auth(self.scheduler_auth.clone())
@@ -1611,7 +1596,7 @@ mod client {
     use tokio::sync::Mutex;
 
     use super::common::{
-        bincode_req_fut, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
+        bincode_req, AllocJobHttpResponse, ReqwestRequestBuilderExt, RunJobHttpRequest,
         ServerCertificateHttpResponse,
     };
     use super::urls;
@@ -1707,7 +1692,7 @@ mod client {
             let client = self.client.clone();
             let server_certs = self.server_certs.clone();
 
-            match bincode_req_fut(req).await? {
+            match bincode_req(req).await? {
                 AllocJobHttpResponse::Success {
                     job_alloc,
                     need_toolchain,
@@ -1727,7 +1712,7 @@ mod client {
                     );
                     let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
                     let req = client.lock().await.get(url);
-                    let res: ServerCertificateHttpResponse = bincode_req_fut(req)
+                    let res: ServerCertificateHttpResponse = bincode_req(req)
                         .await
                         .context("GET to scheduler server_certificate failed")?;
 
@@ -1750,7 +1735,7 @@ mod client {
             let url = urls::scheduler_status(&scheduler_url);
             let req = self.client.lock().await.get(url);
 
-            bincode_req_fut(req).await
+            bincode_req(req).await
         }
 
         async fn do_submit_toolchain(
@@ -1773,7 +1758,7 @@ mod client {
                     let body = reqwest::Body::wrap_stream(stream);
 
                     let req = req.bearer_auth(job_alloc.auth).body(body);
-                    bincode_req_fut(req).await
+                    bincode_req(req).await
                 }
                 Ok(None) => Err(anyhow!("couldn't find toolchain locally")),
                 Err(e) => Err(e),
@@ -1822,7 +1807,7 @@ mod client {
             let req = req
                 .bearer_auth(job_alloc.auth.clone())
                 .bytes(compressed_body);
-            let res = bincode_req_fut(req).await?;
+            let res = bincode_req(req).await?;
 
             Ok((res, path_transformer))
         }
