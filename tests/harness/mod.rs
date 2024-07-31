@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str::{self, FromStr};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net;
 
 use assert_cmd::prelude::*;
@@ -42,11 +42,11 @@ pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
     if !sccache_command()
         .arg("--start-server")
         // Uncomment following lines to debug locally.
-        .env("SCCACHE_LOG", "debug")
-        .env(
-            "SCCACHE_ERROR_LOG",
-            env::temp_dir().join("sccache_local_daemon.txt"),
-        )
+        // .env("SCCACHE_LOG", "debug")
+        // .env(
+        //     "SCCACHE_ERROR_LOG",
+        //     env::temp_dir().join("sccache_local_daemon.txt"),
+        // )
         .env("SCCACHE_CONF", cfg_path)
         .env("SCCACHE_CACHED_CONF", cached_cfg_path)
         .status()
@@ -110,7 +110,6 @@ pub fn sccache_command() -> Command {
     use sccache::util::OsStrExt;
 
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin("sccache"));
-    // cmd.env_remove(key)
     for (var, _) in env::vars_os() {
         if var.starts_with("SCCACHE_") {
             cmd.env_remove(var);
@@ -287,15 +286,11 @@ impl DistSystem {
                 "-e",
                 "SCCACHE_NO_DAEMON=1",
                 "-e",
-                "SCCACHE_LOG=debug",
+                "SCCACHE_LOG=info",
                 "-e",
                 "RUST_BACKTRACE=1",
                 "--network",
                 "host",
-                // "--network",
-                // "my_bridge_network",
-                // "-p",
-                // "10500:10500",
                 "-v",
                 &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
                 "-v",
@@ -324,13 +319,7 @@ impl DistSystem {
 
         let scheduler_url = self.scheduler_url();
 
-        wait_for_http(
-            &self.client,
-            scheduler_url,
-            Duration::from_millis(1000),
-            MAX_STARTUP_WAIT,
-        )
-        .await;
+        wait_for_http(scheduler_url, Duration::from_millis(1000), MAX_STARTUP_WAIT);
 
         let status_fut = async move {
             loop {
@@ -354,7 +343,7 @@ impl DistSystem {
             }
         };
 
-        wait_for(status_fut, MAX_STARTUP_WAIT).await;
+        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub async fn add_server(&mut self) -> ServerHandle {
@@ -371,19 +360,11 @@ impl DistSystem {
                 "--name",
                 &server_name,
                 "-e",
-                "RUST_LOG=warp::requests=trace,warp=trace",
-                // "-e",
-                // "SCCACHE_NO_DAEMON=1",
-                "-e",
-                "SCCACHE_LOG=debug",
+                "SCCACHE_LOG=info",
                 "-e",
                 "RUST_BACKTRACE=1",
-                // "--network",
-                // "my_bridge_network",
-                "--network", // Maybe map ports here??
+                "--network",
                 "host",
-                // "-p",
-                // "12345:12345",
                 "-v",
                 &format!("{}:/sccache-dist", self.sccache_dist.to_str().unwrap()),
                 "-v",
@@ -411,7 +392,6 @@ impl DistSystem {
 
         check_output(&output);
 
-        // let server_ip = IpAddr::from_str("0.0.0.0").unwrap();
         let server_ip = IpAddr::from_str("127.0.0.1").unwrap();
         let server_cfg = sccache_server_cfg(&self.tmpdir, self.scheduler_url(), server_ip);
         fs::File::create(&server_cfg_path)
@@ -453,7 +433,6 @@ impl DistSystem {
             println!("Should be unreachable");
             unreachable!();
         });
-        // self.server_handles.push(handle);
 
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
@@ -465,10 +444,7 @@ impl DistSystem {
     pub async fn restart_server(&mut self, handle: &ServerHandle) {
         match handle {
             ServerHandle::Container { cid, url: _ } => {
-                let output = Command::new("docker")
-                    .args(["restart", cid])
-                    .output()
-                    .unwrap();
+                let output = Command::new("docker").args(["restart", cid]).unwrap();
                 check_output(&output);
             }
             ServerHandle::AsyncTask { handle: _, url: _ } => {
@@ -484,13 +460,7 @@ impl DistSystem {
             ServerHandle::Container { cid: _, url }
             | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
         };
-        wait_for_http(
-            &self.client,
-            url,
-            Duration::from_millis(100),
-            MAX_STARTUP_WAIT,
-        )
-        .await;
+        wait_for_http(url, Duration::from_millis(100), MAX_STARTUP_WAIT);
         let status_fut = async move {
             loop {
                 let status = self.scheduler_status();
@@ -513,7 +483,7 @@ impl DistSystem {
             }
         };
 
-        wait_for(status_fut, MAX_STARTUP_WAIT).await;
+        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
@@ -655,72 +625,50 @@ fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
         .unwrap();
 
     reqwest::ClientBuilder::new()
+        .pool_max_idle_per_host(0)
         .use_native_tls()
         .use_preconfigured_tls(tls)
 }
 
 #[cfg(feature = "dist-server")]
-async fn wait_for_http(
-    client: &reqwest::Client,
-    url: HTTPUrl,
-    interval: Duration,
-    max_wait: Duration,
-) {
-    use tokio::time::{sleep, timeout};
-
-    let url_clone = url.clone();
-
-    let try_connect = async move {
-        // let url = url.parse::<reqwest::Url>().expect("Invalid URL");
-        let url = url_clone.to_url();
-
-        loop {
-            match timeout(interval, client.get(url.clone()).send()).await {
-                Ok(Ok(response)) => {
-                    if response.status().is_success() {
-                        println!(
-                            "Received successful response with status: {:?}",
-                            response.status()
-                        );
-                        break;
-                    } else {
-                        eprintln!("Received non-success status: {:?}", response.status());
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Request error: {}", e);
-                }
-                Err(e) => {
-                    eprintln!("Request timeout error: {}", e);
-                }
+fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
+    // TODO: after upgrading to reqwest >= 0.9, use 'danger_accept_invalid_certs' and stick with that rather than tcp
+    wait_for(
+        || {
+            let url = url.to_url();
+            let url = url.socket_addrs(|| None).unwrap();
+            match std::net::TcpStream::connect(url.as_slice()) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e.to_string()),
             }
-            sleep(Duration::from_secs(1)).await
-        }
-    };
-
-    match timeout(max_wait, try_connect).await {
-        Ok(_) => println!("Successfully connected to {:?}", url),
-        Err(e) => println!("wait timed out, last error result: {}", e),
-    }
-    // let try_connect = async move {
-    //     let url = url.to_url();
-
-    //     loop {
-    //         if let Ok(Ok(_)) = tokio::time::timeout(interval, client.get(url.clone()).send()).await
-    //         {
-    //             break;
-    //         };
-    //     }
-    // };
-
-    // if let Err(e) = tokio::time::timeout(max_wait, try_connect).await {
-    //     panic!("wait timed out, last error result: {}", e)
-    // }
+        },
+        interval,
+        max_wait,
+    )
 }
 
-async fn wait_for<F: std::future::Future<Output = Result<(), String>>>(f: F, max_wait: Duration) {
-    let res = tokio::time::timeout(max_wait, f).await;
+fn wait_for<F: Fn() -> Result<(), String>>(f: F, interval: Duration, max_wait: Duration) {
+    let start = Instant::now();
+    let mut lasterr;
+    loop {
+        match f() {
+            Ok(()) => return,
+            Err(e) => lasterr = e,
+        }
+        if start.elapsed() > max_wait {
+            break;
+        }
+        thread::sleep(interval)
+    }
+    panic!("wait timed out, last error result: {}", lasterr)
+}
 
-    println!("WAIT_FOR result = {res:#?}");
-    // .expect("wait timed out")
+async fn wait_for_fut<F: std::future::Future<Output = Result<(), String>>>(
+    f: F,
+    max_wait: Duration,
+) {
+    tokio::time::timeout(max_wait, f)
+        .await
+        .unwrap()
+        .expect("wait timed out");
 }

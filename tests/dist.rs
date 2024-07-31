@@ -9,6 +9,7 @@ extern crate serde_json;
 use crate::harness::{
     get_stats, sccache_command, start_local_daemon, stop_local_daemon, write_json_cfg, write_source,
 };
+use assert_cmd::prelude::*;
 use async_trait::async_trait;
 use sccache::config::HTTPUrl;
 use sccache::dist::{
@@ -23,7 +24,7 @@ use sccache::errors::*;
 
 mod harness;
 
-async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path: &Path) {
+fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path: &Path) {
     let envs: Vec<(_, &OsStr)> = vec![
         ("RUST_BACKTRACE", "1".as_ref()),
         ("SCCACHE_LOG", "debug".as_ref()),
@@ -34,7 +35,7 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(SCCACHE_TEST_DEFINE)\n#error SCCACHE_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
 
-    assert!(sccache_command()
+    sccache_command()
         .args([
             std::env::var("CC")
                 .unwrap_or_else(|_| "gcc".to_string())
@@ -46,9 +47,8 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
-        .status()
-        .unwrap()
-        .success())
+        .assert()
+        .success();
 }
 
 pub fn dist_test_sccache_client_cfg(
@@ -83,7 +83,7 @@ async fn test_dist_basic() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
 
     get_stats(|info| {
         assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
@@ -117,10 +117,10 @@ async fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
 
     system.restart_server(&server_handle).await;
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
@@ -153,7 +153,7 @@ async fn test_dist_nobuilder() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
@@ -222,7 +222,7 @@ async fn test_dist_failingserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());

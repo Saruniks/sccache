@@ -975,6 +975,7 @@ where
     let tls = tls_builder.build()?;
 
     let client_builder = reqwest::ClientBuilder::new()
+        .pool_max_idle_per_host(0)
         .use_native_tls()
         .use_preconfigured_tls(tls);
 
