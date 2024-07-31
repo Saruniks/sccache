@@ -51,7 +51,7 @@ http-body-util = { version = "0.1", optional = true }
 hyper = { version = "1.1", optional = true, features = [
   "server",
   "http1",
-] } # Can we use warp::hyper instead??
+] }
 hyper-util = { version = "0.1.3", optional = true, features = [
   "tokio",
   "server",
@@ -69,25 +69,19 @@ number_prefix = "0.4"
 once_cell = "1.19"
 opendal = { version = "0.47.3", optional = true, default-features = false }
 openssl = { version = "0.10.64", optional = true }
-picky = "6.2" # remove, replace with openssl??
 rand = "0.8.4"
 regex = "1.10.3"
 reqsign = { version = "0.15.2", optional = true }
 reqwest = { version = "0.12", features = [
   "json",
   "native-tls",
-  "blocking",                # Try to remove blocking..
   "stream",
   "rustls-tls",
   "rustls-tls-native-roots",
   "trust-dns",
 ], optional = true }
 retry = "2"
-rsa = "0.4" # remove, replace with openssl??
 semver = "1.0"
-structopt = "0.3.25" # only sccache-dist???
-#redis = { version = "0.21", optional = true, default-features = false, features = ["aio", "tokio-comp"] }
-#percent-encoding = { version = "2", optional = true }
 serde = "1.0"
 serde_json = "1.0"
 sha2 = { version = "0.10.8", optional = true }
@@ -126,7 +120,7 @@ nix = { version = "0.28.0", optional = true, features = [
 ] }
 object = "0.32"
 syslog = { version = "6", optional = true }
-thiserror = { version = "1.0.30", optional = true } # is this used somewhere?? Doesn't seem so
+thiserror = { version = "1.0.30", optional = true }
 version-compare = { version = "0.1.1", optional = true }
 void = { version = "1", optional = true }
 warp = { version = "0.3.2", optional = true, features = [
@@ -212,7 +206,6 @@ dist-server = [
   "version-compare",
   "warp",
   "thiserror",
-  "sha2",            # is this necessary??
 ]
 # Enables dist tests with external requirements
 dist-tests = ["dist-client", "dist-server"]
