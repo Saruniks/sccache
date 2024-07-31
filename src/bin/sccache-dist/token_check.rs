@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use base64::Engine;
 use sccache::dist::http::{ClientAuthCheck, ClientVisibleMsg};
+use sccache::util::new_reqwest_client;
 use sccache::util::BASE64_URL_SAFE_ENGINE;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -103,7 +104,7 @@ impl MozillaCheck {
     pub fn new(required_groups: Vec<String>) -> Self {
         Self {
             auth_cache: tokio::sync::Mutex::new(HashMap::new()),
-            client: reqwest::Client::new(),
+            client: new_reqwest_client(),
             required_groups,
         }
     }
@@ -275,7 +276,7 @@ impl ProxyTokenCheck {
         let maybe_auth_cache: Option<Mutex<(HashMap<String, Instant>, Duration)>> =
             cache_secs.map(|secs| Mutex::new((HashMap::new(), Duration::from_secs(secs))));
         Self {
-            client: reqwest::Client::new(),
+            client: new_reqwest_client(),
             maybe_auth_cache,
             url,
         }

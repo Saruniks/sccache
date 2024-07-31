@@ -43,10 +43,10 @@ pub fn start_local_daemon(cfg_path: &Path, cached_cfg_path: &Path) {
         .arg("--start-server")
         // Uncomment following lines to debug locally.
         .env("SCCACHE_LOG", "debug")
-        // .env(
-        // "SCCACHE_ERROR_LOG",
-        // env::temp_dir().join("sccache_local_daemon.txt"),
-        // )
+        .env(
+            "SCCACHE_ERROR_LOG",
+            env::temp_dir().join("sccache_local_daemon.txt"),
+        )
         .env("SCCACHE_CONF", cfg_path)
         .env("SCCACHE_CACHED_CONF", cached_cfg_path)
         .status()
@@ -437,7 +437,6 @@ impl DistSystem {
     ) -> ServerHandle {
         let server_addr = {
             let ip = IpAddr::from_str("127.0.0.1").unwrap();
-            // let ip = IpAddr::from_str("0.0.0.0").unwrap();
             let listener = net::TcpListener::bind(SocketAddr::from((ip, 0)))
                 .await
                 .unwrap();
@@ -519,7 +518,6 @@ impl DistSystem {
 
     pub fn scheduler_url(&self) -> HTTPUrl {
         let url = format!("http://127.0.0.1:{}", SCHEDULER_PORT);
-        // let url = format!("http://172.18.0.1:{}", SCHEDULER_PORT);
         HTTPUrl::from_url(reqwest::Url::parse(&url).unwrap())
     }
 
