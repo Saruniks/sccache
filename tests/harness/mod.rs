@@ -436,7 +436,7 @@ impl DistSystem {
         handler: S,
     ) -> ServerHandle {
         let server_addr = {
-            let ip = IpAddr::from_str("127.0.0.1").unwrap();
+            let ip = IpAddr::from_str("0.0.0.0").unwrap();
             let listener = net::TcpListener::bind(SocketAddr::from((ip, 0)))
                 .await
                 .unwrap();
