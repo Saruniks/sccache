@@ -271,30 +271,6 @@ mod server {
     use async_trait::async_trait;
     use tokio::sync::Mutex;
 
-    pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
-        req: reqwest::RequestBuilder,
-    ) -> Result<T> {
-        // Work around tiny_http issue #151 by disabling HTTP pipeline with
-        // `Connection: close`.
-        let res = req
-            .header(reqwest::header::CONNECTION, "close")
-            .send()
-            .await?;
-        let status = res.status();
-        let headers = res.headers().clone();
-        let body = res.bytes().await.context("error reading response body")?;
-        if !status.is_success() {
-            Err(anyhow!(
-                "Error {} (Headers={:?}): {}",
-                status.as_u16(),
-                headers,
-                String::from_utf8_lossy(&body)
-            ))
-        } else {
-            bincode::deserialize(&body).map_err(Into::into)
-        }
-    }
-
     pub(crate) fn create_https_cert_and_privkey(
         addr: SocketAddr,
     ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {

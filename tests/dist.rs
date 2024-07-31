@@ -18,9 +18,6 @@ use sccache::dist::{
 use serial_test::serial;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
-use std::time::Duration;
-use tokio::time::sleep;
 
 use sccache::errors::*;
 
@@ -37,7 +34,6 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(SCCACHE_TEST_DEFINE)\n#error SCCACHE_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
 
-    // Use tokio command instead
     assert!(sccache_command()
         .args([
             std::env::var("CC")
@@ -53,53 +49,6 @@ async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cf
         .status()
         .unwrap()
         .success())
-
-    // // Create the command once and reuse it
-    // let mut base_command: Command = sccache_command();
-
-    // // Command::new("/home/ubuntu-user/sccache/target/debug/sccache");
-
-    // println!("FIRST_COMMAND = {:#?}", base_command);
-
-    // // let command = base_command.args(["gcc", "-c", "/tmp/x.c", "-o", "/tmp/x.o"]);
-
-    // // println!("BASE_COMMAND = {:#?}", command);
-
-    // // Clone the base command and add arguments to it
-    // // let command = base_command.args([
-    // //     std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()),
-    // //     "-c".to_string(),
-    // //     // "-DSCCACHE_TEST_DEFINE".to_string(),
-    // // ]);
-
-    // // Use tokio command here somehow...
-
-    // // println!(
-    // //     "COMMAND = {:#?}",
-    // //     command
-    // //         // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
-    // //         // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
-    // //         .arg(tmpdir.join(source_file))
-    // //         .arg("-o")
-    // //         .arg(tmpdir.join(obj_file))
-    // //         .envs(envs.clone()) // .status()
-    // //                             // .unwrap()
-    // // );
-
-    // assert!(base_command
-    //     // .arg(std::env::var("CC").unwrap_or_else(|_| "gcc".to_string()))
-    //     // .args(["-c", "-DSCCACHE_TEST_DEFINE"])
-    //     .arg("gcc")
-    //     .arg("-DSCCACHE_TEST_DEFINE")
-    //     .arg("-c")
-    //     .arg(tmpdir.join(source_file))
-    //     .arg("-o")
-    //     .arg(tmpdir.join(obj_file))
-    //     .envs(envs)
-    //     .status()
-    //     .unwrap()
-    //     // .await
-    //     .success())
 }
 
 pub fn dist_test_sccache_client_cfg(
