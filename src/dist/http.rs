@@ -244,13 +244,6 @@ pub mod urls {
 #[cfg(feature = "dist-server")]
 mod server {
     use once_cell::sync::Lazy;
-    use picky::hash::HashAlgorithm;
-    use picky::key::{PrivateKey, PublicKey};
-    use picky::signature::SignatureAlgorithm;
-    use picky::x509::certificate::CertificateBuilder;
-    use picky::x509::date::UTCDate;
-    use picky::x509::extension::ExtendedKeyUsage;
-    use picky::x509::name::{DirectoryName, GeneralNames};
     use rand::{rngs::OsRng, RngCore};
     use serde::Serialize;
     use std::collections::HashMap;
@@ -276,10 +269,6 @@ mod server {
     const HEARTBEAT_ERROR_INTERVAL: Duration = Duration::from_secs(10);
     pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
     use async_trait::async_trait;
-    use chrono::Datelike;
-    use chrono::Timelike;
-    use sha2::Digest;
-    use std::net::IpAddr;
     use tokio::sync::Mutex;
 
     pub async fn bincode_req<T: serde::de::DeserializeOwned + 'static>(
@@ -1627,7 +1616,6 @@ mod server {
 #[cfg(feature = "dist-client")]
 mod client {
     use super::super::cache;
-    use super::server::bincode_req;
     use crate::config;
     use crate::dist::pkg::{InputsPackager, ToolchainPackager};
     use crate::dist::{
@@ -1642,7 +1630,6 @@ mod client {
     use std::collections::HashMap;
     use std::io::Write;
     use std::path::{Path, PathBuf};
-    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::Mutex;
@@ -1744,7 +1731,7 @@ mod client {
             let client = self.client.clone();
             let server_certs = self.server_certs.clone();
 
-            match bincode_req(req).await? {
+            match bincode_req_fut(req).await? {
                 AllocJobHttpResponse::Success {
                     job_alloc,
                     need_toolchain,
@@ -1764,7 +1751,7 @@ mod client {
                     );
                     let url = urls::scheduler_server_certificate(&scheduler_url, server_id);
                     let req = client.lock().await.get(url);
-                    let res: ServerCertificateHttpResponse = bincode_req(req)
+                    let res: ServerCertificateHttpResponse = bincode_req_fut(req)
                         .await
                         .context("GET to scheduler server_certificate failed")?;
 
@@ -1787,7 +1774,7 @@ mod client {
             let url = urls::scheduler_status(&scheduler_url);
             let req = self.client.lock().await.get(url);
 
-            bincode_req(req).await
+            bincode_req_fut(req).await
         }
 
         async fn do_submit_toolchain(
@@ -1810,7 +1797,7 @@ mod client {
                     let body = reqwest::Body::wrap_stream(stream);
 
                     let req = req.bearer_auth(job_alloc.auth).body(body);
-                    bincode_req(req).await
+                    bincode_req_fut(req).await
                 }
                 Ok(None) => Err(anyhow!("couldn't find toolchain locally")),
                 Err(e) => Err(e),
@@ -1859,7 +1846,7 @@ mod client {
             let req = req
                 .bearer_auth(job_alloc.auth.clone())
                 .bytes(compressed_body);
-            let res = bincode_req(req).await?;
+            let res = bincode_req_fut(req).await?;
 
             Ok((res, path_transformer))
         }

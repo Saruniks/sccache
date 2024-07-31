@@ -20,7 +20,7 @@ use crate::compiler::{
 };
 #[cfg(feature = "dist-client")]
 use crate::config;
-use crate::config::{Config, HTTPUrl};
+use crate::config::Config;
 use crate::dist;
 use crate::jobserver::Client;
 use crate::mock_command::{CommandCreatorSync, ProcessCommandCreator};
@@ -50,7 +50,6 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::{ExitStatus, Output};
-use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
@@ -67,7 +66,6 @@ use tokio::{
 use tokio_serde::Framed;
 use tokio_util::codec::{length_delimited, LengthDelimitedCodec};
 use tower::Service;
-use url::Url;
 
 use crate::errors::*;
 
