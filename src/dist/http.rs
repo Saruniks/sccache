@@ -270,6 +270,7 @@ mod server {
         Toolchain, UpdateJobStateResult,
     };
     use crate::errors::*;
+    use crate::util::new_reqwest_client;
 
     const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
     const HEARTBEAT_ERROR_INTERVAL: Duration = Duration::from_secs(10);
@@ -1551,7 +1552,7 @@ mod server {
             let job_authorizer = Arc::new(JWTJobAuthorizer::new(jwt_key));
             let heartbeat_url = urls::scheduler_heartbeat_server(&scheduler_url);
             let requester = Arc::new(ServerRequester {
-                client: reqwest::Client::new(),
+                client: new_reqwest_client(),
                 scheduler_url,
                 scheduler_auth: scheduler_auth.clone(),
             });
@@ -1561,7 +1562,7 @@ mod server {
             tokio::spawn(async move {
                 use tokio::time;
 
-                let client = reqwest::Client::new();
+                let client = new_reqwest_client();
                 loop {
                     trace!("Performing heartbeat");
                     match bincode_req_fut(

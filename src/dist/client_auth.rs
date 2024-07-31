@@ -85,6 +85,7 @@ mod code_grant_pkce {
         html_response, json_response, query_pairs, MIN_TOKEN_VALIDITY, MIN_TOKEN_VALIDITY_WARNING,
         REDIRECT_WITH_AUTH_JSON,
     };
+    use crate::util::new_reqwest_client;
     use crate::util::BASE64_URL_SAFE_ENGINE;
     use base64::Engine;
     use bytes::Bytes;
@@ -245,7 +246,7 @@ mod code_grant_pkce {
             grant_type: GRANT_TYPE_PARAM_VALUE,
             redirect_uri,
         };
-        let client = reqwest::Client::new();
+        let client = new_reqwest_client();
         let res = client.post(token_url).json(&token_request).send().await?;
         if !res.status().is_success() {
             bail!(

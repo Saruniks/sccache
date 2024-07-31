@@ -168,15 +168,10 @@ async fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    sleep(Duration::from_secs(5)).await;
     basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
-
-    sleep(Duration::from_secs(5)).await;
 
     system.restart_server(&server_handle).await;
-    sleep(Duration::from_secs(5)).await;
     basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
-    sleep(Duration::from_secs(5)).await;
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
@@ -269,8 +264,8 @@ async fn test_dist_failingserver() {
 
     let mut system = harness::DistSystem::new(&sccache_dist, tmpdir);
     system.add_scheduler().await;
-    let handle = system.add_custom_server(FailingServer).await;
 
+    let handle = system.add_custom_server(FailingServer).await;
     let sccache_cfg = dist_test_sccache_client_cfg(tmpdir, system.scheduler_url());
     let sccache_cfg_path = tmpdir.join("sccache-cfg.json");
     write_json_cfg(tmpdir, "sccache-cfg.json", &sccache_cfg);
