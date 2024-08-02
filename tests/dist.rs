@@ -200,7 +200,7 @@ impl ServerIncoming for FailingServer {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_failingserver() {

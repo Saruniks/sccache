@@ -286,7 +286,7 @@ impl DistSystem {
                 "-e",
                 "SCCACHE_NO_DAEMON=1",
                 "-e",
-                "SCCACHE_LOG=info",
+                "SCCACHE_LOG=debug",
                 "-e",
                 "RUST_BACKTRACE=1",
                 "--network",
@@ -318,32 +318,26 @@ impl DistSystem {
         check_output(&output);
 
         let scheduler_url = self.scheduler_url();
-
-        wait_for_http(scheduler_url, Duration::from_millis(1000), MAX_STARTUP_WAIT);
-
-        let status_fut = async move {
-            loop {
+        wait_for_http(scheduler_url, Duration::from_millis(100), MAX_STARTUP_WAIT);
+        wait_for(
+            || {
                 let status = self.scheduler_status();
-
-                tokio::select! {
-                    s = status => {
-                        if matches!(
-                            s,
-                            SchedulerStatusResult {
-                                num_servers: 0,
-                                num_cpus: _,
-                                in_progress: 0
-                        }
-                        ) {
-                            break Ok(());
-                        }
+                if matches!(
+                    status,
+                    SchedulerStatusResult {
+                        num_servers: 0,
+                        num_cpus: _,
+                        in_progress: 0
                     }
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                ) {
+                    Ok(())
+                } else {
+                    Err(format!("{:?}", status))
                 }
-            }
-        };
-
-        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
+            },
+            Duration::from_millis(100),
+            MAX_STARTUP_WAIT,
+        );
     }
 
     pub async fn add_server(&mut self) -> ServerHandle {
@@ -360,7 +354,7 @@ impl DistSystem {
                 "--name",
                 &server_name,
                 "-e",
-                "SCCACHE_LOG=info",
+                "SCCACHE_LOG=debug",
                 "-e",
                 "RUST_BACKTRACE=1",
                 "--network",
@@ -407,7 +401,7 @@ impl DistSystem {
             cid: server_name,
             url,
         };
-        self.wait_server_ready(&handle).await;
+        self.wait_server_ready(&handle);
         handle
     }
 
@@ -416,8 +410,8 @@ impl DistSystem {
         handler: S,
     ) -> ServerHandle {
         let server_addr = {
-            let ip = IpAddr::from_str("0.0.0.0").unwrap();
-            let listener = net::TcpListener::bind(SocketAddr::from((ip, 0)))
+            let ip = IpAddr::from_str("127.0.0.1").unwrap();
+            let listener = net::TcpListener::bind(SocketAddr::from((ip, 12346)))
                 .await
                 .unwrap();
             listener.local_addr().unwrap()
@@ -437,7 +431,7 @@ impl DistSystem {
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
         let handle = ServerHandle::AsyncTask { handle, url };
-        self.wait_server_ready(&handle).await;
+        self.wait_server_ready(&handle);
         handle
     }
 
@@ -452,38 +446,34 @@ impl DistSystem {
                 panic!("restart not yet implemented for pids")
             }
         }
-        self.wait_server_ready(handle).await
+        self.wait_server_ready(handle)
     }
 
-    pub async fn wait_server_ready(&mut self, handle: &ServerHandle) {
+    pub fn wait_server_ready(&mut self, handle: &ServerHandle) {
         let url = match handle {
             ServerHandle::Container { cid: _, url }
             | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
         };
         wait_for_http(url, Duration::from_millis(100), MAX_STARTUP_WAIT);
-        let status_fut = async move {
-            loop {
+        wait_for(
+            || {
                 let status = self.scheduler_status();
-
-                tokio::select! {
-                    s = status => {
-                        if matches!(
-                            s,
-                            SchedulerStatusResult {
-                                num_servers: 1,
-                                num_cpus: _,
-                                in_progress: 0
-                            }
-                        ) {
-                            break Ok(());
-                        }
+                if matches!(
+                    status,
+                    SchedulerStatusResult {
+                        num_servers: 1,
+                        num_cpus: _,
+                        in_progress: 0
                     }
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                ) {
+                    Ok(())
+                } else {
+                    Err(format!("{:?}", status))
                 }
-            }
-        };
-
-        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
+            },
+            Duration::from_millis(100),
+            MAX_STARTUP_WAIT,
+        );
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
@@ -491,13 +481,18 @@ impl DistSystem {
         HTTPUrl::from_url(reqwest::Url::parse(&url).unwrap())
     }
 
-    async fn scheduler_status(&self) -> SchedulerStatusResult {
+    fn scheduler_status(&self) -> SchedulerStatusResult {
         let url = dist::http::urls::scheduler_status(&self.scheduler_url().to_url());
-        let res = self.client.get(url).send().await.unwrap();
-        assert!(res.status().is_success());
-        let bytes = res.bytes().await.unwrap();
+        let client = reqwest::Client::new();
 
-        bincode::deserialize_from(bytes.as_ref()).unwrap()
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let res = client.get(url).send().await.unwrap();
+                assert!(res.status().is_success());
+                let bytes = res.bytes().await.unwrap();
+                bincode::deserialize_from(bytes.as_ref()).unwrap()
+            })
+        })
     }
 }
 
