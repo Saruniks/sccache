@@ -318,26 +318,38 @@ impl DistSystem {
         check_output(&output);
 
         let scheduler_url = self.scheduler_url();
-        wait_for_http(scheduler_url, Duration::from_millis(100), MAX_STARTUP_WAIT);
-        wait_for(
-            || {
-                let status = self.scheduler_status();
-                if matches!(
-                    status,
-                    SchedulerStatusResult {
-                        num_servers: 0,
-                        num_cpus: _,
-                        in_progress: 0
-                    }
-                ) {
-                    Ok(())
-                } else {
-                    Err(format!("{:?}", status))
-                }
-            },
+        wait_for_http_fut(
+            &self.client,
+            scheduler_url,
             Duration::from_millis(100),
             MAX_STARTUP_WAIT,
-        );
+        )
+        .await;
+
+        let status_fut = async move {
+            loop {
+                let status = self.scheduler_status();
+
+                tokio::select! {
+                    s = status => {
+                        if matches!(
+                            s,
+                            SchedulerStatusResult {
+                                num_servers: 0,
+                                num_cpus: _,
+                                in_progress: 0
+                        }
+                        ) {
+                            break Ok(());
+                        } else {
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                }
+            }
+        };
+
+        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub async fn add_server(&mut self) -> ServerHandle {
@@ -401,7 +413,7 @@ impl DistSystem {
             cid: server_name,
             url,
         };
-        self.wait_server_ready(&handle);
+        self.wait_server_ready(&handle).await;
         handle
     }
 
@@ -431,7 +443,7 @@ impl DistSystem {
         let url =
             HTTPUrl::from_url(reqwest::Url::parse(&format!("https://{}", server_addr)).unwrap());
         let handle = ServerHandle::AsyncTask { handle, url };
-        self.wait_server_ready(&handle);
+        self.wait_server_ready(&handle).await;
         handle
     }
 
@@ -446,34 +458,45 @@ impl DistSystem {
                 panic!("restart not yet implemented for pids")
             }
         }
-        self.wait_server_ready(handle)
+        self.wait_server_ready(handle).await
     }
 
-    pub fn wait_server_ready(&mut self, handle: &ServerHandle) {
+    pub async fn wait_server_ready(&mut self, handle: &ServerHandle) {
         let url = match handle {
             ServerHandle::Container { cid: _, url }
             | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
         };
-        wait_for_http(url, Duration::from_millis(100), MAX_STARTUP_WAIT);
-        wait_for(
-            || {
-                let status = self.scheduler_status();
-                if matches!(
-                    status,
-                    SchedulerStatusResult {
-                        num_servers: 1,
-                        num_cpus: _,
-                        in_progress: 0
-                    }
-                ) {
-                    Ok(())
-                } else {
-                    Err(format!("{:?}", status))
-                }
-            },
+        wait_for_http_fut(
+            &self.client,
+            url,
             Duration::from_millis(100),
             MAX_STARTUP_WAIT,
-        );
+        )
+        .await;
+
+        let status_fut = async move {
+            loop {
+                let status = self.scheduler_status();
+
+                tokio::select! {
+                    s = status => {
+                        if matches!(
+                            s,
+                            SchedulerStatusResult {
+                                num_servers: 1,
+                                num_cpus: _,
+                                in_progress: 0
+                            }
+                        ) {
+                            break Ok(());
+                        }
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                }
+            }
+        };
+
+        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
@@ -481,18 +504,14 @@ impl DistSystem {
         HTTPUrl::from_url(reqwest::Url::parse(&url).unwrap())
     }
 
-    fn scheduler_status(&self) -> SchedulerStatusResult {
+    async fn scheduler_status(&self) -> SchedulerStatusResult {
         let url = dist::http::urls::scheduler_status(&self.scheduler_url().to_url());
         let client = reqwest::Client::new();
 
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let res = client.get(url).send().await.unwrap();
-                assert!(res.status().is_success());
-                let bytes = res.bytes().await.unwrap();
-                bincode::deserialize_from(bytes.as_ref()).unwrap()
-            })
-        })
+        let res = client.get(url).send().await.unwrap();
+        assert!(res.status().is_success());
+        let bytes = res.bytes().await.unwrap();
+        bincode::deserialize_from(bytes.as_ref()).unwrap()
     }
 }
 
@@ -626,36 +645,28 @@ fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
 }
 
 #[cfg(feature = "dist-server")]
-fn wait_for_http(url: HTTPUrl, interval: Duration, max_wait: Duration) {
-    // TODO: after upgrading to reqwest >= 0.9, use 'danger_accept_invalid_certs' and stick with that rather than tcp
-    wait_for(
-        || {
-            let url = url.to_url();
-            let url = url.socket_addrs(|| None).unwrap();
-            match std::net::TcpStream::connect(url.as_slice()) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(e.to_string()),
-            }
-        },
-        interval,
-        max_wait,
-    )
-}
+async fn wait_for_http_fut(
+    client: &reqwest::Client,
+    url: HTTPUrl,
+    interval: Duration,
+    max_wait: Duration,
+) {
+    let try_connect = async move {
+        let url = url.to_url();
 
-fn wait_for<F: Fn() -> Result<(), String>>(f: F, interval: Duration, max_wait: Duration) {
-    let start = Instant::now();
-    let mut lasterr;
-    loop {
-        match f() {
-            Ok(()) => return,
-            Err(e) => lasterr = e,
+        loop {
+            match tokio::time::timeout(interval, client.get(url.clone()).send()).await {
+                Ok(Ok(_)) => {
+                    break;
+                }
+                _ => {}
+            };
         }
-        if start.elapsed() > max_wait {
-            break;
-        }
-        thread::sleep(interval)
+    };
+
+    if let Err(e) = tokio::time::timeout(max_wait, try_connect).await {
+        panic!("wait timed out, last error result: {}", e)
     }
-    panic!("wait timed out, last error result: {}", lasterr)
 }
 
 async fn wait_for_fut<F: std::future::Future<Output = Result<(), String>>>(

@@ -61,7 +61,7 @@ pub fn dist_test_sccache_client_cfg(
     sccache_cfg
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_basic() {
@@ -95,7 +95,7 @@ async fn test_dist_basic() {
     });
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_restartedserver() {
@@ -132,7 +132,7 @@ async fn test_dist_restartedserver() {
     });
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_nobuilder() {
@@ -200,7 +200,7 @@ impl ServerIncoming for FailingServer {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_failingserver() {
