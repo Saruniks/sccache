@@ -7,10 +7,10 @@ extern crate sccache;
 extern crate serde_json;
 
 use crate::harness::{
-    get_stats, sccache_command, start_local_daemon, stop_local_daemon, write_json_cfg, write_source,
+    get_stats, start_local_daemon, stop_local_daemon, write_json_cfg, write_source,
 };
-use assert_cmd::prelude::*;
 use async_trait::async_trait;
+use harness::sccache_command;
 use sccache::config::HTTPUrl;
 use sccache::dist::{
     AssignJobResult, CompileCommand, InputsReader, JobId, JobState, RunJobResult, ServerIncoming,
@@ -24,7 +24,7 @@ use sccache::errors::*;
 
 mod harness;
 
-fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path: &Path) {
+async fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path: &Path) {
     let envs: Vec<(_, &OsStr)> = vec![
         ("RUST_BACKTRACE", "1".as_ref()),
         ("SCCACHE_LOG", "debug".as_ref()),
@@ -35,7 +35,9 @@ fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path
     let obj_file = "x.o";
     write_source(tmpdir, source_file, "#if !defined(SCCACHE_TEST_DEFINE)\n#error SCCACHE_TEST_DEFINE is not defined\n#endif\nint x() { return 5; }");
 
-    sccache_command()
+    let mut command: tokio::process::Command = sccache_command().into();
+
+    let _ = command
         .args([
             std::env::var("CC")
                 .unwrap_or_else(|_| "gcc".to_string())
@@ -47,7 +49,9 @@ fn basic_compile(tmpdir: &Path, sccache_cfg_path: &Path, sccache_cached_cfg_path
         .arg("-o")
         .arg(tmpdir.join(obj_file))
         .envs(envs)
-        .assert()
+        .status()
+        .await
+        .unwrap()
         .success();
 }
 
@@ -83,7 +87,7 @@ async fn test_dist_basic() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(1, info.stats.dist_compiles.values().sum::<usize>());
@@ -117,10 +121,10 @@ async fn test_dist_restartedserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
     system.restart_server(&server_handle).await;
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(2, info.stats.dist_compiles.values().sum::<usize>());
@@ -153,7 +157,7 @@ async fn test_dist_nobuilder() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
@@ -200,7 +204,7 @@ impl ServerIncoming for FailingServer {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 #[cfg_attr(not(feature = "dist-tests"), ignore)]
 #[serial]
 async fn test_dist_failingserver() {
@@ -222,7 +226,7 @@ async fn test_dist_failingserver() {
 
     stop_local_daemon();
     start_local_daemon(&sccache_cfg_path, &sccache_cached_cfg_path);
-    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path);
+    basic_compile(tmpdir, &sccache_cfg_path, &sccache_cached_cfg_path).await;
 
     get_stats(|info| {
         assert_eq!(0, info.stats.dist_compiles.values().sum::<usize>());
