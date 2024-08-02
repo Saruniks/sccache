@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::str::{self, FromStr};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::net;
 
 use assert_cmd::prelude::*;
@@ -318,7 +318,7 @@ impl DistSystem {
         check_output(&output);
 
         let scheduler_url = self.scheduler_url();
-        wait_for_http_fut(
+        wait_for_http(
             &self.client,
             scheduler_url,
             Duration::from_millis(100),
@@ -341,7 +341,6 @@ impl DistSystem {
                         }
                         ) {
                             break Ok(());
-                        } else {
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_millis(100)) => {}
@@ -349,7 +348,7 @@ impl DistSystem {
             }
         };
 
-        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
+        wait_for(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub async fn add_server(&mut self) -> ServerHandle {
@@ -466,7 +465,7 @@ impl DistSystem {
             ServerHandle::Container { cid: _, url }
             | ServerHandle::AsyncTask { handle: _, url } => url.clone(),
         };
-        wait_for_http_fut(
+        wait_for_http(
             &self.client,
             url,
             Duration::from_millis(100),
@@ -496,7 +495,7 @@ impl DistSystem {
             }
         };
 
-        wait_for_fut(status_fut, MAX_STARTUP_WAIT).await;
+        wait_for(status_fut, MAX_STARTUP_WAIT).await;
     }
 
     pub fn scheduler_url(&self) -> HTTPUrl {
@@ -645,7 +644,7 @@ fn native_tls_no_sni_client_builder_danger() -> reqwest::ClientBuilder {
 }
 
 #[cfg(feature = "dist-server")]
-async fn wait_for_http_fut(
+async fn wait_for_http(
     client: &reqwest::Client,
     url: HTTPUrl,
     interval: Duration,
@@ -655,12 +654,10 @@ async fn wait_for_http_fut(
         let url = url.to_url();
 
         loop {
-            match tokio::time::timeout(interval, client.get(url.clone()).send()).await {
-                Ok(Ok(_)) => {
-                    break;
-                }
-                _ => {}
-            };
+            if let Ok(Ok(_)) = tokio::time::timeout(interval, client.get(url.clone()).send()).await
+            {
+                break;
+            }
         }
     };
 
@@ -669,10 +666,7 @@ async fn wait_for_http_fut(
     }
 }
 
-async fn wait_for_fut<F: std::future::Future<Output = Result<(), String>>>(
-    f: F,
-    max_wait: Duration,
-) {
+async fn wait_for<F: std::future::Future<Output = Result<(), String>>>(f: F, max_wait: Duration) {
     tokio::time::timeout(max_wait, f)
         .await
         .unwrap()
