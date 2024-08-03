@@ -233,7 +233,7 @@ mod server {
     use serde::Serialize;
     use std::collections::HashMap;
     use std::convert::Infallible;
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::result::Result as StdResult;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1536,14 +1536,20 @@ mod server {
                         }
                     }
                 }
-            }); 
+            });
+
+            let port = self._public_addr.port();
+
+            let new_socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
 
             warp::serve(api)
                 .tls()
                 .cert(cert_pem)
                 .key(privkey_pem)
-                .run(SocketAddr::from_str("0.0.0.0:10600").unwrap())
+                .run(new_socket_addr)
                 .await;
+
+            unreachable!();
         }
     }
 
