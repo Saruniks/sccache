@@ -152,7 +152,7 @@ prepare_and_run_sccache_dist()
 	  gzip -n >"$TEST_TMPDIR/rust-toolchain.tgz"
 
 	echo "Starting scheduler"
-	sccache-dist scheduler --config "$TEST_TMPDIR"/scheduler.conf
+	SCCACHE_NO_DAEMON=1 sccache-dist scheduler --config "$TEST_TMPDIR"/scheduler.conf &
 }
 
 prepare_zpool()
