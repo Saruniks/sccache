@@ -837,6 +837,8 @@ mod server {
             UpdateCerts,
             #[error("failed to interpret pem as certificate")]
             BadCertificate,
+            #[error("failed to create a HTTP client")]
+            NoHTTPClient,
             #[error("failed to process heartbeat")]
             Heartbeat,
             #[error("failed to update job state")]
@@ -936,7 +938,10 @@ mod server {
                         Error::AllocJob
                         | Error::Heartbeat
                         | Error::UpdateJobState
-                        | Error::Status => Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR)),
+                        | Error::Status
+                        | Error::NoHTTPClient => {
+                            Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR))
+                        }
                     }
                 } else {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
@@ -1226,6 +1231,7 @@ mod server {
             use crate::dist::{
                 HeartbeatServerResult, JobState, SchedulerStatusResult, UpdateJobStateResult,
             };
+            use anyhow::Context;
             use std::collections::HashMap;
             use std::sync::Arc;
             use tokio::sync::Mutex;
@@ -1312,7 +1318,6 @@ mod server {
                     handler.handle_status().map_err(|_| Error::Status)?;
                 Ok(res)
             }
-
             async fn maybe_update_certs(
                 client: &mut reqwest::Client,
                 certs: &mut HashMap<ServerId, (Vec<u8>, Vec<u8>)>,
@@ -1329,11 +1334,24 @@ mod server {
                     "Adding new certificate for {} to scheduler",
                     server_id.addr()
                 );
-
-                let _ = native_tls::Certificate::from_pem(&cert_pem)
-                    .map_err(|_| Error::BadCertificate)?;
-
-                let new_client = crate::util::new_reqwest_client();
+                let mut client_builder = reqwest::ClientBuilder::new();
+                // Add all the certificates we know about
+                client_builder = client_builder.add_root_certificate(
+                    reqwest::Certificate::from_pem(&cert_pem).map_err(|_| Error::BadCertificate)?,
+                );
+                for (_, cert_pem) in certs.values() {
+                    client_builder = client_builder.add_root_certificate(
+                        reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
+                    );
+                }
+                // Finish the client
+                let new_client = client_builder
+                    // Disable connection pool to avoid broken connection
+                    // between runtime
+                    .pool_max_idle_per_host(0)
+                    .build()
+                    .context("failed to create a HTTP client")
+                    .map_err(|_| Error::NoHTTPClient)?;
                 // Use the updated certificates
                 *client = new_client;
                 certs.insert(server_id, (cert_digest, cert_pem));
