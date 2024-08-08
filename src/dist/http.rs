@@ -837,14 +837,10 @@ mod server {
             UpdateCerts,
             #[error("failed to interpret pem as certificate")]
             BadCertificate,
-            #[error("failed to create a HTTP client")]
-            NoHTTPClient,
             #[error("failed to process heartbeat")]
             Heartbeat,
             #[error("failed to update job state")]
             UpdateJobState,
-            #[error("failed to create a http client")]
-            ClientBuildFailed,
         }
 
         impl warp::reject::Reject for Error {}
@@ -940,11 +936,7 @@ mod server {
                         Error::AllocJob
                         | Error::Heartbeat
                         | Error::UpdateJobState
-                        | Error::Status
-                        | Error::NoHTTPClient
-                        | Error::ClientBuildFailed => {
-                            Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR))
-                        }
+                        | Error::Status => Ok(err_and_log(e, StatusCode::INTERNAL_SERVER_ERROR)),
                     }
                 } else {
                     Ok(reply::with_status(warp::reply(), StatusCode::NOT_FOUND).into_response())
@@ -1340,14 +1332,8 @@ mod server {
 
                 let _ = native_tls::Certificate::from_pem(&cert_pem)
                     .map_err(|_| Error::BadCertificate)?;
-                // Add all the certificates we know about
-                let root_certs =
-                    std::iter::once(&cert_pem).chain(certs.values().map(|(_, cert_pem)| cert_pem));
-                let client_builder = crate::util::native_tls_no_sni_client_builder(root_certs)
-                    .map_err(|_| Error::ClientBuildFailed)?;
 
-                // Finish the clients
-                let new_client = client_builder.build().map_err(|_| Error::NoHTTPClient)?;
+                let new_client = crate::util::new_reqwest_client();
                 // Use the updated certificates
                 *client = new_client;
                 certs.insert(server_id, (cert_digest, cert_pem));
@@ -1387,11 +1373,7 @@ mod server {
                 check_client_auth,
                 check_server_auth,
             } = self;
-            let client =
-                crate::util::native_tls_no_sni_client_builder(std::iter::empty::<Vec<u8>>())
-                    .unwrap()
-                    .build()
-                    .unwrap();
+            let client = crate::util::new_reqwest_client();
             let requester = Arc::new(SchedulerRequester {
                 client: Mutex::new(client),
             });
@@ -1627,11 +1609,7 @@ mod client {
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
             let connect_timeout = Duration::new(CONNECT_TIMEOUT_SECS, 0);
 
-            let builder =
-                crate::util::native_tls_no_sni_client_builder(std::iter::empty::<Vec<u8>>())
-                    .context("failed to create an async HTTP client")?;
-
-            let client = builder
+            let client = reqwest::Client::builder()
                 .timeout(timeout)
                 .connect_timeout(connect_timeout)
                 // Disable connection pool to avoid broken connection
@@ -1659,21 +1637,27 @@ mod client {
             cert_digest: Vec<u8>,
             cert_pem: Vec<u8>,
         ) -> Result<()> {
+            let mut client_async_builder = reqwest::ClientBuilder::new();
             // Add all the certificates we know about
-            let root_certs = std::iter::once(&cert_pem).chain(certs.values());
-            let client_builder = crate::util::native_tls_no_sni_client_builder(root_certs)
-                .context("failed to create an async HTTP client")?;
-
-            // Finish the clients
+            client_async_builder = client_async_builder.add_root_certificate(
+                reqwest::Certificate::from_pem(&cert_pem)
+                    .context("failed to interpret pem as certificate")?,
+            );
+            for cert_pem in certs.values() {
+                client_async_builder = client_async_builder.add_root_certificate(
+                    reqwest::Certificate::from_pem(cert_pem).expect("previously valid cert"),
+                );
+            }
+            // Finish the client
             let timeout = Duration::new(REQUEST_TIMEOUT_SECS, 0);
-            let new_client = client_builder
+            let new_client_async = client_async_builder
                 .timeout(timeout)
                 // Disable keep-alive
                 .pool_max_idle_per_host(0)
                 .build()
                 .context("failed to create an async HTTP client")?;
             // Use the updated certificates
-            *client = new_client;
+            *client = new_client_async;
             certs.insert(cert_digest, cert_pem);
             Ok(())
         }

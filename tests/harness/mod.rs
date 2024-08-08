@@ -251,7 +251,7 @@ impl DistSystem {
         let tmpdir = tmpdir.join("distsystem");
         fs::create_dir(&tmpdir).unwrap();
 
-        let client = native_tls_no_sni_client_builder_danger().build().unwrap();
+        let client = new_reqwest_client().build().unwrap();
 
         Self {
             sccache_dist: sccache_dist.to_owned(),
